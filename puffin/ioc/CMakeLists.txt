@@ -1,0 +1,16 @@
+cmake_minimum_required(VERSION 3.0)
+
+project(puffin_ioc)
+
+file(GLOB_RECURSE HEADERS *.hpp)
+
+puffin_declare_module(
+  NAME
+    ioc
+  HEADERS
+    ${HEADERS}
+  DEPS
+    puffin::common
+)
+
+puffin_declare_tests(SOURCES ioc_test.cpp DEPS puffin::ioc)

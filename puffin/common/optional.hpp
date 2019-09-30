@@ -37,19 +37,13 @@
 #ifndef PFN_OPTIONAL_HPP
 #define PFN_OPTIONAL_HPP
 
+#include <puffin/common/none.hpp>
 #include <string>
 
 namespace pfn {
 
-struct none_t {
-  struct init_tag {};
-  explicit none_t(init_tag) {}
-};
-
-const none_t none((none_t::init_tag())); // Taken from boost
-
 ///
-/// Optional type to be used by restpp
+/// Optional type
 ///
 template<typename T>
 class optional {
