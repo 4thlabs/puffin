@@ -35,7 +35,7 @@ function(puffin_declare_module)
         add_library("${PUFFIN_MODULE_NAME}" INTERFACE)
 
         target_include_directories("${PUFFIN_MODULE_NAME}"
-            INTERFACE $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>
+            INTERFACE $<BUILD_INTERFACE:"${CMAKE_CURRENT_SOURCE_DIR}/..">
             INTERFACE $<INSTALL_INTERFACE:include>
         )
 
