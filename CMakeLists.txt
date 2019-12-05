@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.11)
 
 project(puffin-cpp)
 
-include(${CMAKE_SOURCE_DIR}/cmake/PuffinHelpers.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/PuffinHelpers.cmake)
 
 option(BUILD_TESTS "Build tests" on)
 option(BUILD_SAMPLES "Build samples" on)
