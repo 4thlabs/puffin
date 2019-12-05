@@ -1,7 +1,5 @@
 cmake_minimum_required(VERSION 3.0)
 
-project(puffin_maths)
-
 file(GLOB_RECURSE HEADERS include/*.hpp)
 
 puffin_declare_module(

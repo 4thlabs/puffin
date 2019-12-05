@@ -4,15 +4,11 @@
 
 # Puffin Cpp
 
-Puffin Cpp is a C++ library full of simple utilities used in all of my other projects. From http/httpd to small event bus, 
-helpers to bootstrap a project faster.
-
-## Design
-
-## Modules
+Puffin Cpp is a small c++ library made of simple utilities like event bus, meta template helpers, used to bootstrap projects faster.
 
 ### Common
 ### Events
+### Ioc
 ### Maths
 
 
