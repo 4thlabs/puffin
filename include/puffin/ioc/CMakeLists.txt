@@ -7,6 +7,8 @@ puffin_declare_module(
     ioc
   HEADERS
     ${HEADERS}
+  FEATURES
+    cxx_std_17
   DEPS
     puffin::common
 )

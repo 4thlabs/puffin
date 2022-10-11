@@ -35,7 +35,7 @@ function(puffin_declare_module)
         add_library("${PUFFIN_MODULE_NAME}" INTERFACE)
 
         target_include_directories("${PUFFIN_MODULE_NAME}"
-            INTERFACE $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>
+            INTERFACE $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
             INTERFACE $<INSTALL_INTERFACE:include>
         )
 
@@ -48,8 +48,6 @@ function(puffin_declare_module)
             INTERFACE
                 ${PUFFIN_MODULE_FEATURES}
         )
-
-        target_compile_features("${PUFFIN_MODULE_NAME}" INTERFACE cxx_std_14)
     else()
 
     endif()
