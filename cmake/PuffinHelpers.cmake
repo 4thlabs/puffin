@@ -131,7 +131,7 @@ function(puffin_main_tests)
     get_property(SOURCES GLOBAL PROPERTY PUFFIN_TEST_SOURCES)
     get_property(DEPS GLOBAL PROPERTY PUFFIN_TEST_DEPS)
 
-    add_executable("main_test" ${CMAKE_SOURCE_DIR}/tests/main_test.cpp "${SOURCES}")
+    add_executable("main_test" ${CMAKE_CURRENT_SOURCE_DIR}/main_test.cpp "${SOURCES}")
     target_link_libraries("main_test" Catch2 "${DEPS}")
 
     set_target_properties("main_test"
