@@ -3,7 +3,7 @@ include(FetchContent)
 FetchContent_Declare(
     catch2
     GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-    GIT_TAG v2.9.0
+    GIT_TAG v2.13.10
     GIT_SHALLOW ON
 )
 
@@ -35,8 +35,8 @@ function(puffin_declare_module)
         add_library("${PUFFIN_MODULE_NAME}" INTERFACE)
 
         target_include_directories("${PUFFIN_MODULE_NAME}"
-            INTERFACE $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-            INTERFACE $<INSTALL_INTERFACE:include>
+            INTERFACE $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>
+            INTERFACE $<INSTALL_INTERFACE:puffin>
         )
 
         target_link_libraries("${PUFFIN_MODULE_NAME}"
@@ -52,7 +52,7 @@ function(puffin_declare_module)
 
     endif()
 
-    install(DIRECTORY include/ DESTINATION include)
+    install(DIRECTORY puffin/ DESTINATION include)
 
     install(TARGETS "${PUFFIN_MODULE_NAME}" EXPORT "${PUFFIN_MODULE_TARGETS_NAME}"
         RUNTIME DESTINATION bin
