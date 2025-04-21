@@ -34,29 +34,54 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include <catch2/catch.hpp>
-#include <iostream>
-#include <puffin/maths/vector3.hpp>
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
-pfn::vector3f v1(1.0, 2, 3.0f);
-pfn::vector3f v2(4.1f, 5.2f, 6.3f);
+#include <puffin/ioc/ioc.hpp>
 
-TEST_CASE("Vector3 operations", "[maths][vector3]") {
-  SECTION("equals") {
-    REQUIRE(v1 == pfn::vector3f(1, 2, 3));
+template<typename... Args>
+class cont : public pfn::ioc::container<Args...> {
+public:
+
+};
+
+class obj1 {
+public:
+  int value = 2;
+};
+
+class obj2 {
+public:
+  obj2(std::shared_ptr<obj1> c)
+    : o1(c)
+  {}
+
+  std::shared_ptr<obj1> o1;
+};
+
+class obj3 {
+public:
+  obj3(std::shared_ptr<obj1> o1, std::shared_ptr<obj2> o2) 
+  {
+
   }
+};
 
-  SECTION("addition") {
-    pfn::vector3f v3 = v1 + v2;
+template<>
+struct pfn::ioc::dependencies<obj2> : pfn::ioc::bind<obj1> {};
 
-    REQUIRE(v1 + v2 == pfn::vector3f(5.1, 7.2, 9.3));
-    REQUIRE(v3 == pfn::vector3f(5.1, 7.2, 9.3));
-  }
+template<>
+struct pfn::ioc::dependencies<obj3> : pfn::ioc::bind<obj1, obj2> {};
 
-  SECTION("multiplication") {
-    pfn::vector3f v3 = v1 * v2;   
-    
-    REQUIRE(v1 * v2 == pfn::vector3f(4.1, 10.4, 18.9));
-    REQUIRE(v3 == pfn::vector3f(4.1, 10.4, 18.9));
+cont<obj1, obj2, obj3> c;
+
+TEST_CASE("ioc", "[ioc]") {
+  SECTION("initialization") {
+    auto l = c.get<obj1>();
+    REQUIRE(l->value == 2);
+    l->value = 3;
+
+    auto l2 = c.get<obj2>();
+    REQUIRE(l2->o1->value == 3);
   }
 }

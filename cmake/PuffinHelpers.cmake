@@ -3,9 +3,11 @@ include(FetchContent)
 FetchContent_Declare(
     catch2
     GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-    GIT_TAG v2.9.0
+    GIT_TAG v3.8.1
     GIT_SHALLOW ON
 )
+
+FetchContent_MakeAvailable(catch2)
 
 set_property(GLOBAL PROPERTY PUFFIN_TEST_SOURCES "")
 set_property(GLOBAL PROPERTY PUFFIN_TEST_DEPS "")
@@ -35,7 +37,7 @@ function(puffin_declare_module)
         add_library("${PUFFIN_MODULE_NAME}" INTERFACE)
 
         target_include_directories("${PUFFIN_MODULE_NAME}"
-            INTERFACE $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+            INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
             INTERFACE $<INSTALL_INTERFACE:include>
         )
 
@@ -131,8 +133,8 @@ function(puffin_main_tests)
     get_property(SOURCES GLOBAL PROPERTY PUFFIN_TEST_SOURCES)
     get_property(DEPS GLOBAL PROPERTY PUFFIN_TEST_DEPS)
 
-    add_executable("main_test" ${CMAKE_CURRENT_SOURCE_DIR}/main_test.cpp "${SOURCES}")
-    target_link_libraries("main_test" Catch2 "${DEPS}")
+    add_executable("main_test" "${SOURCES}")
+    target_link_libraries("main_test" Catch2WithMain "${DEPS}")
 
     set_target_properties("main_test"
         PROPERTIES

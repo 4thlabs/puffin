@@ -34,74 +34,52 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PFN_IOC_HPP
-#define PFN_IOC_HPP
+#include <catch2/catch_test_macros.hpp>
+#include <iostream>
+#include <puffin/maths/matrix4.hpp>
 
-#include <tuple>
-#include <memory>
-
-#include <puffin/common/none.hpp>
-#include <puffin/ioc/bind.hpp>
-
-namespace pfn {
-namespace ioc {
-
-///
-/// A really simple static ioc container
-///
-template<template<typename> typename Allocator = shared_ptr_allocator, typename... Objects>
-class basic_container {
-public:
-  template<typename C>
-  using contained_type = typename Allocator<C>::type;
-
-  using contained_tuple_type = std::tuple<std::shared_ptr<Objects>...>;
-
-public:
-  basic_container() {
-    auto l = {none, set(Allocator<Objects>::allocate(
-      resolve<typename dependencies<Objects>::type>(
-        std::make_index_sequence<dependencies<Objects>::arity>()
-      ), std::make_index_sequence<dependencies<Objects>::arity>())
-    )...};
-  }
-
-  template<typename C>
-  contained_type<C> get()
-  {
-    return std::get<contained_type<C>>(objects_);
-  }
-
-private:
-  template<typename C>
-  none_t set(C rhs)
-  {
-    std::get<C>(objects_) = rhs;
-    return none;
-  }
-
-  template<typename Tuple, size_t... I, 
-           typename std::enable_if<std::is_same<Tuple, none_t>::value, int>::type = 0>
-  std::tuple<none_t> resolve(std::index_sequence<I...>)
-  {
-    return std::make_tuple(none);
-  }
-
-  template<typename Tuple, size_t... I, 
-           typename std::enable_if<!std::is_same<Tuple, none_t>::value, int>::type = 0>
-  Tuple resolve(std::index_sequence<I...>)
-  {
-    return std::make_tuple(std::get<std::tuple_element_t<I, Tuple>>(objects_)...);
-  }
-
-private:
-  contained_tuple_type objects_;
+pfn::matrix4f identity {
+  1.0, 0.0, 0.0, 0.0,
+  0.0, 1.0, 0.0, 0.0,
+  0.0, 0.0, 1.0, 0.0,
+  0.0, 0.0, 0.0, 1.0
 };
 
-template<typename... Args>
-using container = basic_container<shared_ptr_allocator, Args...>;
+pfn::matrix4f t1 {
+  5.0, 3.2, -4.1, 6.9,
+  2.0, -4.0, 3.0, 2.3,
+  7.0, 3.0, -3.4, 2.0,
+  -8.0, 2.0, 5.2, 4.1
+};
 
-}
-}
+pfn::matrix4f t2 {
+  3.0, 2.6, -7.1, -3.9,
+  -6.0, 2.1, 3.2, 8.0,
+  5.0, 4.7, 7.2, -6.0,
+  3.0, 7.0, 3.5, 6.0
+};
 
-#endif // PFN_IOC_HPP
+pfn::matrix4f t3 {
+  -4.0, 48.75, -30.63, 72.1,
+  51.9, 27.0, 2.65, -44.0,
+  -8.0, 22.52, -57.58, 29.1,
+  2.3, 36.54, 114.99, 40.6
+};
+
+TEST_CASE("matrix operations", "[maths][matrix]") {
+  SECTION("equality") {
+    pfn::matrix4f m;
+
+    REQUIRE(m == identity);
+  }
+
+  SECTION("multiplication") {
+    pfn::matrix4f m = t1 * t2;
+    std::cout << m << std::endl;
+    //REQUIRE(m == t3);
+  }
+
+  SECTION("addition") {
+    
+  }
+}

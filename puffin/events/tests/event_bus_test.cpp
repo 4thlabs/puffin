@@ -34,10 +34,15 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
+
 #include "puffin/events/event_bus.hpp"
 
 using namespace pfn::events;
+
+using Catch::Matchers::EndsWith;
+using Catch::Matchers::ContainsSubstring;
 
 struct my_event {};
 struct my_event_2 {};
@@ -67,7 +72,7 @@ TEST_CASE("Events are received or not", "[events]") {
   });
 
   SECTION("Events are received", "[Events]") {
-    REQUIRE_THROWS_WITH(bus.send(my_event()), Catch::Contains("my_event"));
+    REQUIRE_THROWS_WITH(bus.send(my_event()), ContainsSubstring("my_event"));
   }
 
   SECTION("Events handlers can be cleared") {
@@ -77,14 +82,14 @@ TEST_CASE("Events are received or not", "[events]") {
 
     bus.clear<my_event>();
     REQUIRE_NOTHROW(bus.send(my_event()));
-    REQUIRE_THROWS_WITH(bus.send(my_event_2()), Catch::Contains("my_event_2"));
+    REQUIRE_THROWS_WITH(bus.send(my_event_2()), ContainsSubstring("my_event_2"));
   }
 
   SECTION("Events handlers can be removed") {
     test t;
 
     bus.add_handler<my_event_2>(&t);
-    REQUIRE_THROWS_WITH(bus.send(my_event_2()), Catch::Contains("my_event_2"));
+    REQUIRE_THROWS_WITH(bus.send(my_event_2()), ContainsSubstring("my_event_2"));
     
     bus.remove_handler<my_event_2>(&t);
     REQUIRE_NOTHROW(bus.send(my_event_2()));
@@ -106,8 +111,8 @@ TEST_CASE("Events are received or not", "[events]") {
     bus.clear_all();
     register_events<my_event, my_event_2>(bus, &t);
 
-    REQUIRE_THROWS_WITH(bus.send(my_event()), Catch::Contains("my_event"));
-    REQUIRE_THROWS_WITH(bus.send(my_event_2()), Catch::Contains("my_event_2"));
+    REQUIRE_THROWS_WITH(bus.send(my_event()), ContainsSubstring("my_event"));
+    REQUIRE_THROWS_WITH(bus.send(my_event_2()), ContainsSubstring("my_event_2"));
 
     unregister_events<my_event, my_event_2>(bus, &t);
 

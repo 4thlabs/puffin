@@ -1,6 +1,6 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.14)
 
-file(GLOB_RECURSE COMMON_HEADERS *.hpp)
+file(GLOB_RECURSE COMMON_HEADERS include/**.hpp)
 
 puffin_declare_module(
   NAME

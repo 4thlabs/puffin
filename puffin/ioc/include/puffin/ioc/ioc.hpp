@@ -34,52 +34,74 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include <catch2/catch.hpp>
-#include "puffin/ioc/ioc.hpp"
+#ifndef PFN_IOC_IOC_HPP
+#define PFN_IOC_IOC_HPP
+
+#include <tuple>
+#include <memory>
+
+#include <puffin/common/none.hpp>
+#include <puffin/ioc/bind.hpp>
+
+namespace pfn {
+namespace ioc {
+
+///
+/// A really simple static ioc container
+///
+template<template<typename> typename Allocator = shared_ptr_allocator, typename... Objects>
+class basic_container {
+public:
+  template<typename C>
+  using contained_type = typename Allocator<C>::type;
+
+  using contained_tuple_type = std::tuple<std::shared_ptr<Objects>...>;
+
+public:
+  basic_container() {
+    auto l = {none, set(Allocator<Objects>::allocate(
+      resolve<typename dependencies<Objects>::type>(
+        std::make_index_sequence<dependencies<Objects>::arity>()
+      ), std::make_index_sequence<dependencies<Objects>::arity>())
+    )...};
+  }
+
+  template<typename C>
+  contained_type<C> get()
+  {
+    return std::get<contained_type<C>>(objects_);
+  }
+
+private:
+  template<typename C>
+  none_t set(C rhs)
+  {
+    std::get<C>(objects_) = rhs;
+    return none;
+  }
+
+  template<typename Tuple, size_t... I, 
+           typename std::enable_if<std::is_same<Tuple, none_t>::value, int>::type = 0>
+  std::tuple<none_t> resolve(std::index_sequence<I...>)
+  {
+    return std::make_tuple(none);
+  }
+
+  template<typename Tuple, size_t... I, 
+           typename std::enable_if<!std::is_same<Tuple, none_t>::value, int>::type = 0>
+  Tuple resolve(std::index_sequence<I...>)
+  {
+    return std::make_tuple(std::get<std::tuple_element_t<I, Tuple>>(objects_)...);
+  }
+
+private:
+  contained_tuple_type objects_;
+};
 
 template<typename... Args>
-class cont : public pfn::ioc::container<Args...> {
-public:
+using container = basic_container<shared_ptr_allocator, Args...>;
 
-};
-
-class obj1 {
-public:
-  int value = 2;
-};
-
-class obj2 {
-public:
-  obj2(std::shared_ptr<obj1> c)
-    : o1(c)
-  {}
-
-  std::shared_ptr<obj1> o1;
-};
-
-class obj3 {
-public:
-  obj3(std::shared_ptr<obj1> o1, std::shared_ptr<obj2> o2) 
-  {
-
-  }
-};
-
-template<>
-struct pfn::ioc::dependencies<obj2> : pfn::ioc::bind<obj1> {};
-
-template<>
-struct pfn::ioc::dependencies<obj3> : pfn::ioc::bind<obj1, obj2> {};
-
-cont<obj1, obj2, obj3> c;
-
-TEST_CASE("ioc", "[ioc]") {
-  SECTION("initialization") {
-    auto l = c.get<obj1>();
-    REQUIRE(l->value == 2);
-    l->value = 3;
-
-    auto l2 = c.get<obj2>();
-    REQUIRE(l2->o1->value == 3);
-  }
 }
+}
+
+#endif // PFN_IOC_IOC_HPP

@@ -4,13 +4,14 @@ file(GLOB_RECURSE HEADERS *.hpp)
 
 puffin_declare_module(
   NAME
-    ioc
+    events
   HEADERS
     ${HEADERS}
   FEATURES
-    cxx_std_17
+    cxx_variadic_templates
+    cxx_relaxed_constexpr
   DEPS
     puffin::common
 )
 
-puffin_declare_tests(SOURCES ioc_test.cpp DEPS puffin::ioc)
+puffin_declare_tests(SOURCES tests/event_bus_test.cpp DEPS puffin::events)
