@@ -50,9 +50,8 @@ async<void> co_main() {
   REQUIRE(res == 2);
 }
 
-
 TEST_CASE("async", "[async]") {
-  SECTION("Truc") {
+  SECTION("Run coroutine") {
     thread_executor executor;
 
     co_spawn(executor, co_main(), [&](const std::exception_ptr ex) {

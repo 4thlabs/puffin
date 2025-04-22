@@ -47,15 +47,15 @@ using completion = std::function<void(const std::exception_ptr e)>;
 template<Executor E, typename T>
 async<co_entry_point> co_spawn(E& e, async<T> work, const completion& completion = [](auto){}) {
   co_await e.schedule();
+  std::exception_ptr ex = nullptr;
 
   try {
     co_await work;
   } catch (...) {
-    auto ex = std::current_exception();
-    completion(ex);
+    ex = std::current_exception();
   }
 
-  completion(nullptr);
+  completion(ex);
 }
 
 }

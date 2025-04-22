@@ -40,7 +40,6 @@
 #include <coroutine>
 #include <concepts>
 
-
 namespace puffin {
 namespace async {
 
@@ -48,6 +47,9 @@ template<typename T>
 concept Executor = requires(T a)
 {
   { a.post(std::coroutine_handle<>()) } -> std::same_as<void>;
+  { a.schedule() };
+  { a.stop() };
+  { a.run(bool()) };
 };
 
 /**

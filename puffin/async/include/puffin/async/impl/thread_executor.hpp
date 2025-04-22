@@ -48,7 +48,7 @@ namespace puffin {
 namespace async {
 
 /**
- * @brief A very basy single threaded executor
+ * @brief A very basic single thread executor
  */
 class thread_executor final {
 public:
@@ -74,17 +74,10 @@ public:
       :running_(false)
   {}
 
-  ~thread_executor()
-  {
+  ~thread_executor() {}
+
+  void wait() {
     stop();
-
-    if(thread_.joinable())
-      thread_.join();
-  }
-
-  void join() {
-    running_ = false;
-    cv_.notify_all();
     if (thread_.joinable())
       thread_.join();
   }
@@ -133,26 +126,26 @@ private:
 
     while(running_) {
       std::unique_lock<std::mutex> lk(cv_mutex_);
-      cv_.wait(lk, [&]() { return !empty(); });
+      cv_.wait(lk, [&]() { return !empty() || !running_; });
 
-      auto coro = pop();
+      if (!empty()) {
+        auto coro = pop();
 
-      if (!coro.done())
-        coro.resume();
+        if (!coro.done())
+          coro.resume();
+      }
     }
   }
 
 private:
-  std::condition_variable cv_;
-
-  std::mutex stack_mutex_;
-  std::mutex cv_mutex_;
-
-
   std::atomic<bool> running_;
 
   std::stack<std::coroutine_handle<>> frames_;
   std::thread thread_;
+
+  std::condition_variable cv_;
+  std::mutex stack_mutex_;
+  std::mutex cv_mutex_;
 };
 
 }
