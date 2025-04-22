@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.5)
 
 project(puffin-cpp)
 
@@ -12,6 +12,7 @@ add_subdirectory(puffin/common)
 add_subdirectory(puffin/events)
 add_subdirectory(puffin/ioc)
 add_subdirectory(puffin/maths)
+add_subdirectory(puffin/async)
 
 if(BUILD_TESTS)
   enable_testing()
