@@ -13,6 +13,7 @@ add_subdirectory(puffin/events)
 add_subdirectory(puffin/ioc)
 add_subdirectory(puffin/maths)
 add_subdirectory(puffin/async)
+add_subdirectory(puffin/webkit)
 
 if(BUILD_TESTS)
   enable_testing()
