@@ -45,16 +45,24 @@ using json = nlohmann::json;
 json sample = R"(
   {
     "number": 1,
-    "title": "My Title"
-    "type": ["Standard", "Hyperspace"]
+    "title": "My Title",
+    "type": ["Standard"]
   }
 )"_json;
 
 json sample2 = R"(
   {
     "number": 2,
-    "title": "Another title"
-    "type": ["Standard", "Hyperspace"]
+    "title": "Another My Title",
+    "type": ["Hyperspace"]
+  }
+)"_json;
+
+json sample3 = R"(
+  {
+    "number": 3,
+    "title": "Your Title",
+    "type": ["OP Promo"]
   }
 )"_json;
 
@@ -62,20 +70,38 @@ auto f = [](const json& v) -> std::string {
   return "";
 };
 
+struct json_sort {
+  std::string key = "";
+
+  bool operator()(const json& v1, const json&v2) {
+    return (v1.contains(key) && v2.contains(key)) ? v1[key] < v2[key] : false;
+  }
+};
+
+struct json_contains {
+  std::string key = "";
+  std::string text = "";
+
+  bool operator()(const json& v1) {
+    return v1.contains(key) ? v1[key].get<std::string>().find(text) != std::string::npos : false;
+  }
+};
+
 TEST_CASE("imbd") {
 
   puffin::imdb::in_memory_database<std::string, json> db;
+  db.insert("doc", sample);
+  db.insert("doc", sample3);
+  db.insert("doc", sample2);
 
   SECTION("can insert data") {
-    REQUIRE(db.size("doc") == 0);
+    REQUIRE(db.size("doc") == 3);
     REQUIRE_NOTHROW(db.insert("doc", sample));
-    REQUIRE(db.size("doc") == 1);
+    REQUIRE(db.size("doc") == 4);
   }
 
   SECTION("Can access data") {
-    REQUIRE_THROWS(db.row("doc", 0));
-
-    REQUIRE_NOTHROW(db.insert("doc", sample));
+    REQUIRE_THROWS(db.row("doc", 4));
 
     REQUIRE_NOTHROW(db.row("doc", 0));
 
@@ -83,11 +109,63 @@ TEST_CASE("imbd") {
     REQUIRE(j["number"] == 1);
   }
 
-
   SECTION("Can select data") {
-    db.select([](const json& v) -> std::string {
-        return v["title"];
-      })
-      .from("doc");
+
+    auto req = db.select().from("doc");
+    auto result = req.execute();
+
+    REQUIRE(result[0].get()["number"] == 1);
+  }
+
+  SECTION("Can select data with projection") {
+
+   auto req = db.select([](const json& a) -> std::string {
+                   return a["title"];
+              }).from("doc");
+
+   auto result = req.execute();
+   REQUIRE(result[0].compare("My Title") == 0);
+  }
+
+  SECTION("Can filter data") {
+
+    auto req = db.select()
+                 .from("doc")
+                 .where([](const json& j) {
+                    return j["/type/0"_json_pointer].get<std::string>().compare("Standard") == 0;
+                 });
+
+    auto result = req.execute();
+    REQUIRE(result.size() == 1);
+    REQUIRE(result[0].get()["number"] == 1);
+  }
+
+  SECTION("Can sort data") {
+
+    auto req = db.select()
+                 .from("doc")
+                 .order_by([](const json& v1, const json& v2) {
+                    return v1["number"] < v2["number"];
+                 });
+
+    auto result = req.execute();
+    REQUIRE(result.size() == 3);
+    REQUIRE(result[0].get()["number"] == 1);
+    REQUIRE(result[1].get()["number"] == 2);
+    REQUIRE(result[2].get()["number"] == 3);
+  }
+
+
+  SECTION("Can sort data and filter") {
+
+    auto req = db.select()
+                 .from("doc")
+                 .where(json_contains{.key = "title", .text = "My"})
+                 .order_by(json_sort{.key = "number"});
+
+    auto result = req.execute();
+    REQUIRE(result.size() == 2);
+    REQUIRE(result[0].get()["number"] == 1);
+    REQUIRE(result[1].get()["number"] == 2);
   }
 }

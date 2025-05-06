@@ -42,40 +42,8 @@
 namespace puffin {
 namespace imdb {
 
-template<typename Key, typename Value, typename Transform>
-class request
-{
-public:
-  using transform_fn_type = std::function<Transform(const Value&)>;
-
-  request()
-      : fn_transform_(nullptr)
-  {}
-
-  request(transform_fn_type&& f)
-      : fn_transform_(std::forward<transform_fn_type>(f))
-  {}
-
-  request& from(const Key& from)
-  {
-    from_ = from;
-    return *this;
-  }
-
-  request& where()
-  {
-
-  }
-
-  void execute()
-  {
-
-  }
-
-private:
-  transform_fn_type fn_transform_;
-  Key from_;
-};
+template<typename Key, typename Value, typename Proj, typename Container, typename View>
+class request;
 
 /**
  * @brief A small in memory database
@@ -92,44 +60,51 @@ public:
   using container_type = Container<key_type, std::vector<value_type>>;
   using view_type = Container<key_type, std::vector<value_ref_type>>;
 
+  template<typename P>
+  using request_type = request<key_type, value_type, P, container_type, view_type>;
+
   static constexpr auto fn_identity = [](const Value& v) { return v; };
 
-  basic_in_memory_database() {}
+  basic_in_memory_database()
+      : data_(std::make_shared<container_type>())
+      , data_views_(std::make_shared<view_type>())
+  {}
   ~basic_in_memory_database() {}
 
   void insert(const key_type &key, const value_type &value)
   {
-    data_[key].push_back(value);
+    (*data_)[key].push_back(value);
   }
 
   std::size_t size(const key_type &key)
   {
-    return data_[key].size();
+    return (*data_)[key].size();
   }
 
   const value_type& row(const key_type& key, int index)
   {
-    return data_[key].at(index);
+    return (*data_)[key].at(index);
   }
 
   const value_type &data(const key_type &key)
   {
-    return data_[key];
+    return (*data_)[key];
   }
 
-  auto select() -> request<key_type, value_type, value_type>
+  auto select() -> request_type<value_type>
   {
-    return request<key_type, value_type, value_type>();
+    return request_type<value_type>(data_, data_views_);
   }
 
   template<typename F>
-  auto select(F&& f) -> request<key_type, value_type, decltype(std::declval<F>()(std::declval<Value>()))>
+  auto select(F&& f) -> request_type<decltype(std::declval<F>()(std::declval<Value>()))>
   {
-    return request<key_type, value_type, decltype(std::declval<F>()(std::declval<Value>()))>(std::forward<F>(f));
+    return request_type<decltype(std::declval<F>()(std::declval<Value>()))>(data_, data_views_, std::forward<F>(f));
   }
 
 private:
-  container_type data_;
+  std::shared_ptr<view_type> data_views_;
+  std::shared_ptr<container_type> data_;
 };
 
 template <typename Key, typename Value>

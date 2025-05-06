@@ -38,5 +38,6 @@
 #define PUFFIN_IMDB_HPP
 
 #include <puffin/imdb/inmemorydatabase.hpp>
+#include <puffin/imdb/request.hpp>
 
 #endif // PUFFIN_IMDB_HPP
