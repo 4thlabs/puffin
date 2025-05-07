@@ -35,9 +35,11 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <catch2/catch_test_macros.hpp>
-#include <puffin/imdb.hpp>
-#include <nlohmann/json.hpp>
+#include <catch2/benchmark/catch_benchmark.hpp>
+
 #include <iostream>
+#include <nlohmann/json.hpp>
+#include <puffin/imdb.hpp>
 
 using namespace puffin::imdb;
 using json = nlohmann::json;
@@ -155,7 +157,6 @@ TEST_CASE("imbd") {
     REQUIRE(result[2].get()["number"] == 3);
   }
 
-
   SECTION("Can sort data and filter") {
 
     auto req = db.select()
@@ -168,4 +169,22 @@ TEST_CASE("imbd") {
     REQUIRE(result[0].get()["number"] == 1);
     REQUIRE(result[1].get()["number"] == 2);
   }
+}
+
+TEST_CASE("Imdb Benchmark") {
+  BENCHMARK_ADVANCED("10k Json")(Catch::Benchmark::Chronometer meter) {
+    puffin::imdb::in_memory_database<std::string, json> db;
+
+    for (int i = 0; i < 10000; i++) {
+      db.insert("doc", sample);
+    }
+
+    meter.measure([&]() {
+      auto req = db.select()
+                     .from("doc")
+                     .where(json_contains{.key = "title", .text = "My"})
+                     .order_by(json_sort{.key = "number"});
+      return req.execute();
+    });
+  };
 }

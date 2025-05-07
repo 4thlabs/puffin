@@ -86,7 +86,7 @@ public:
     return (*data_)[key].at(index);
   }
 
-  const value_type &data(const key_type &key)
+  std::vector<value_type> &data(const key_type &key)
   {
     return (*data_)[key];
   }

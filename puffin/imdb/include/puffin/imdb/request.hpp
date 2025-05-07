@@ -57,18 +57,22 @@ template<typename Key, typename Value, typename Proj, typename Container, typena
 class request
 {
 public:
-  using transform_fn_type = std::function<Proj(const Value&)>;
-  using filter_fn_type = std::function<bool(const Value&)>;
-  using order_fn_type = std::function<bool(const Value&, const Value&)>;
+  using transform_type = std::function<Proj(const Value&)>;
+  using filter_type = std::function<bool(const Value&)>;
+  using order_type = std::function<bool(const Value&, const Value&)>;
 
-  using value_type = std::conditional<std::is_same<Value, Proj>::value, std::reference_wrapper<Value>, Proj>::type;
+  using value_type = std::conditional_t
+                                    <
+                                      std::is_same<Value, Proj>::value,
+                                      std::reference_wrapper<Value>,
+                                      Proj
+                                    >;
 
-  static constexpr auto transform_identity = [](const Value& v) constexpr { return v;};
   static constexpr auto filter_identity = [](const Value& v) constexpr { return true; };
 
-  request(std::shared_ptr<Container> d, std::shared_ptr<View> v, transform_fn_type&& f)
+  request(std::shared_ptr<Container> d, std::shared_ptr<View> v, transform_type&& f)
       : data_(d), views_(v)
-      , fn_transform_(std::forward<transform_fn_type>(f)),
+      , fn_transform_(f),
         fn_filter_(filter_identity)
   {
     id_ = reinterpret_cast<uint64_t>(this);
@@ -84,13 +88,13 @@ public:
     return *this;
   }
 
-  request& where(filter_fn_type&& f)
+  request& where(filter_type&& f)
   {
     fn_filter_ = f;
     return *this;
   }
 
-  request& order_by(order_fn_type&& f)
+  request& order_by(order_type&& f)
   {
     fn_order_ = f;
     return *this;
@@ -120,9 +124,9 @@ private:
   std::shared_ptr<Container> data_;
   std::shared_ptr<View> views_;
 
-  transform_fn_type fn_transform_;
-  filter_fn_type fn_filter_;
-  order_fn_type fn_order_ = nullptr;
+  transform_type fn_transform_;
+  filter_type fn_filter_;
+  order_type fn_order_ = nullptr;
 
   Key from_;
 };
