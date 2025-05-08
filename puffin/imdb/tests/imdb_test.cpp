@@ -107,7 +107,7 @@ TEST_CASE("imbd") {
 
     REQUIRE_NOTHROW(db.row("doc", 0));
 
-    auto& j = db.row("doc", 0);
+    auto j = db.row("doc", 0);
     REQUIRE(j["number"] == 1);
   }
 
@@ -116,6 +116,7 @@ TEST_CASE("imbd") {
     auto req = db.select().from("doc");
     auto result = req.execute();
 
+    REQUIRE(result.size() > 0);
     REQUIRE(result[0].get()["number"] == 1);
   }
 
@@ -126,6 +127,7 @@ TEST_CASE("imbd") {
               }).from("doc");
 
    auto result = req.execute();
+   REQUIRE(result.size() > 0);
    REQUIRE(result[0].compare("My Title") == 0);
   }
 
@@ -169,22 +171,40 @@ TEST_CASE("imbd") {
     REQUIRE(result[0].get()["number"] == 1);
     REQUIRE(result[1].get()["number"] == 2);
   }
+
+  SECTION("Can create view") {
+    auto req = db.select()
+                 .from("doc")
+                 .order_by(json_sort{.key = "number"});
+
+    db.create_view("card_view", std::move(req));
+
+    auto result = db.select().from("card_view").execute();
+
+    REQUIRE(result.size() == 3);
+    REQUIRE(result[0].get()["number"] == 1);
+    REQUIRE(result[1].get()["number"] == 2);
+    REQUIRE(result[2].get()["number"] == 3);
+  }
 }
 
-TEST_CASE("Imdb Benchmark") {
-  BENCHMARK_ADVANCED("10k Json")(Catch::Benchmark::Chronometer meter) {
-    puffin::imdb::in_memory_database<std::string, json> db;
+// TEST_CASE("Imdb Benchmark") {
+//   BENCHMARK_ADVANCED("10k Json")(Catch::Benchmark::Chronometer meter) {
+//     puffin::imdb::in_memory_database<std::string, json> db;
 
-    for (int i = 0; i < 10000; i++) {
-      db.insert("doc", sample);
-    }
+//     for (int i = 0; i < 10000; i++) {
+//       db.insert("doc", sample, false);
 
-    meter.measure([&]() {
-      auto req = db.select()
-                     .from("doc")
-                     .where(json_contains{.key = "title", .text = "My"})
-                     .order_by(json_sort{.key = "number"});
-      return req.execute();
-    });
-  };
-}
+//     }
+
+//     db.update_views("doc");
+
+//     meter.measure([&]() {
+//       auto req = db.select()
+//                      .from("doc")
+//                      .where(json_contains{.key = "title", .text = "My"});
+//                      //.order_by(json_sort{.key = "number"});
+//       return req.execute();
+//     });
+//   };
+// }

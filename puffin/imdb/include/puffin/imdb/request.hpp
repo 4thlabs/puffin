@@ -53,7 +53,7 @@ std::string to_key(uint64_t id)
   return std::to_string(id);
 }
 
-template<typename Key, typename Value, typename Proj, typename Container, typename View>
+template<typename Key, typename Value, typename Proj, typename Views>
 class request
 {
 public:
@@ -70,17 +70,22 @@ public:
 
   static constexpr auto filter_identity = [](const Value& v) constexpr { return true; };
 
-  request(std::shared_ptr<Container> d, std::shared_ptr<View> v, transform_type&& f)
-      : data_(d), views_(v)
+  request(std::shared_ptr<Views> v, transform_type&& f)
+      : views_(v)
       , fn_transform_(f),
         fn_filter_(filter_identity)
   {
     id_ = reinterpret_cast<uint64_t>(this);
   }
 
-  request(std::shared_ptr<Container> d, std::shared_ptr<View> v)
-      : request(d, v, nullptr)
+  request(std::shared_ptr<Views> v)
+      : request(v, nullptr)
   {}
+
+  const Key& from()
+  {
+    return from_;
+  }
 
   request& from(const Key& from)
   {
@@ -102,9 +107,15 @@ public:
 
   auto execute() -> std::vector<value_type>
   {
-    auto r = (*data_)[from_] | std::views::filter(fn_filter_);
+    std::vector<std::reference_wrapper<Value>> res;
+    auto r = (*views_)[from_] | std::views::filter(fn_filter_);
 
-    std::vector<std::reference_wrapper<Value>> res(r.begin(), r.end());
+    // For future use
+    if constexpr (requires { std::ranges::size(r); }) {
+      res.reserve(std::ranges::size(r));
+    }
+
+    res.insert(res.begin(), r.begin(), r.end());
 
     if (fn_order_) {
       std::ranges::sort(res, fn_order_);
@@ -118,11 +129,12 @@ public:
     }
   }
 
+
+
 private:
   uint64_t id_;
 
-  std::shared_ptr<Container> data_;
-  std::shared_ptr<View> views_;
+  std::shared_ptr<Views> views_;
 
   transform_type fn_transform_;
   filter_type fn_filter_;

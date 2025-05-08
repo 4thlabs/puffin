@@ -42,7 +42,7 @@
 namespace puffin {
 namespace imdb {
 
-template<typename Key, typename Value, typename Proj, typename Container, typename View>
+template<typename Key, typename Value, typename Proj, typename Views>
 class request;
 
 /**
@@ -50,61 +50,109 @@ class request;
  */
 template <typename Key,
           typename Value,
-          template <typename, typename, typename...> typename Container = std::map>
-class basic_in_memory_database {
+          template <typename, typename...> typename Container = std::vector>
+class basic_in_memory_database
+{
 public:
-  using key_type = Key;
+  using key_type   = Key;
   using value_type = Value;
-  using value_ref_type = std::reference_wrapper<value_type>;
 
-  using container_type = Container<key_type, std::vector<value_type>>;
-  using view_type = Container<key_type, std::vector<value_ref_type>>;
+  using ref_value_type = std::reference_wrapper<value_type>;
+
+  using data_type = Container<value_type>;
+  using view_type = Container<ref_value_type>;
+
+  using data_map = std::map<key_type, data_type>;
+  using view_map = std::map<key_type, view_type>;
 
   template<typename P>
-  using request_type = request<key_type, value_type, P, container_type, view_type>;
+  using request_type = request<key_type, value_type, P, view_map>;
 
-  static constexpr auto fn_identity = [](const Value& v) { return v; };
+  /**
+   * The request map accepts only for now request without transformations
+   */
+  using request_map = std::map<key_type, Container<request_type<value_type>>>;
 
   basic_in_memory_database()
-      : data_(std::make_shared<container_type>())
-      , data_views_(std::make_shared<view_type>())
+      : data_()
+      , data_views_(std::make_shared<view_map>())
   {}
+
   ~basic_in_memory_database() {}
 
-  void insert(const key_type &key, const value_type &value)
+  /**
+   * @brief Creates a view based on the the provided request
+   * @param key
+   * @param req
+   */
+  void create_view(const key_type& key, request_type<value_type>&& req)
   {
-    (*data_)[key].push_back(value);
+    view_request_[key].push_back(req);
+    (*data_views_)[key] = req.execute();
+  }
+
+  void insert(const key_type &key, const value_type &value, bool update = true)
+  {
+    data_[key].push_back(value);
+
+    if (update)
+      update_views(key);
+  }
+
+  template<std::random_access_iterator Iterator>
+  void batch_insert(const key_type &key, Iterator begin, Iterator end)
+  {
+    std::copy(begin, end, std::back_inserter(data_[key]));
+    update_views(key);
   }
 
   std::size_t size(const key_type &key)
   {
-    return (*data_)[key].size();
+    return (*data_views_)[key].size();
   }
 
-  const value_type& row(const key_type& key, int index)
+  value_type& row(const key_type& key, int index)
   {
-    return (*data_)[key].at(index);
+    return (*data_views_)[key].at(index).get();
   }
 
-  std::vector<value_type> &data(const key_type &key)
+  view_type &data(const key_type &key)
   {
-    return (*data_)[key];
+    return (*data_views_)[key];
   }
 
   auto select() -> request_type<value_type>
   {
-    return request_type<value_type>(data_, data_views_);
+    return request_type<value_type>(data_views_);
   }
 
   template<typename F>
   auto select(F&& f) -> request_type<decltype(std::declval<F>()(std::declval<Value>()))>
   {
-    return request_type<decltype(std::declval<F>()(std::declval<Value>()))>(data_, data_views_, std::forward<F>(f));
+    return request_type<decltype(std::declval<F>()(std::declval<Value>()))>(data_views_, std::forward<F>(f));
+  }
+
+  /**
+   * @brief Updates all views based on the data from key
+   * @param key
+   */
+  void update_views(const key_type& key)
+  {
+    // Updating base views
+    for (auto& [k, v] : data_) {
+      (*data_views_)[key] = view_type(v.begin(), v.end());
+    }
+
+    for (auto& req : view_request_[key]) {
+      (*data_views_)[key] = req.execute();
+    }
   }
 
 private:
-  std::shared_ptr<view_type> data_views_;
-  std::shared_ptr<container_type> data_;
+  std::shared_ptr<view_map> data_views_;
+  request_map view_request_;
+
+  data_map data_;
 };
 
 template <typename Key, typename Value>
