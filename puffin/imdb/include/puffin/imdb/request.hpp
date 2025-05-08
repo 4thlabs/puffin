@@ -48,7 +48,7 @@ namespace imdb {
 template<typename Key> Key to_key(uint64_t id);
 
 template<>
-std::string to_key(uint64_t id)
+inline std::string to_key(uint64_t id)
 {
   return std::to_string(id);
 }

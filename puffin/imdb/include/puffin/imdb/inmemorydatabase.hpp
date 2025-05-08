@@ -80,6 +80,9 @@ public:
 
   ~basic_in_memory_database() {}
 
+  basic_in_memory_database(const basic_in_memory_database&) = delete;
+  basic_in_memory_database& operator_(const basic_in_memory_database&) = delete;
+
   /**
    * @brief Creates a view based on the the provided request
    * @param key
@@ -99,7 +102,7 @@ public:
       update_views(key);
   }
 
-  template<std::random_access_iterator Iterator>
+  template<typename Iterator>
   void batch_insert(const key_type &key, Iterator begin, Iterator end)
   {
     std::copy(begin, end, std::back_inserter(data_[key]));
@@ -121,13 +124,13 @@ public:
     return (*data_views_)[key];
   }
 
-  auto select() -> request_type<value_type>
+  auto select() const -> request_type<value_type>
   {
     return request_type<value_type>(data_views_);
   }
 
   template<typename F>
-  auto select(F&& f) -> request_type<decltype(std::declval<F>()(std::declval<Value>()))>
+  auto select(F&& f) const -> request_type<decltype(std::declval<F>()(std::declval<Value>()))>
   {
     return request_type<decltype(std::declval<F>()(std::declval<Value>()))>(data_views_, std::forward<F>(f));
   }
