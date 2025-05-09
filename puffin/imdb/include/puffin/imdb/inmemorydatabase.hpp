@@ -38,6 +38,7 @@
 #define PUFFIN_IMDB_INMEMORYDATABASE_HPP
 
 #include <map>
+#include <list>
 
 namespace puffin {
 namespace imdb {
@@ -59,7 +60,7 @@ public:
 
   using ref_value_type = std::reference_wrapper<value_type>;
 
-  using data_type = Container<value_type>;
+  using data_type = std::list<value_type>;
   using view_type = Container<ref_value_type>;
 
   using data_map = std::map<key_type, data_type>;
@@ -99,7 +100,7 @@ public:
     data_[key].push_back(value);
 
     if (update)
-      update_views(key);
+      (*data_views_)[key].push_back(data_[key].back());
   }
 
   template<typename Iterator>
