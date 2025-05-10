@@ -144,7 +144,7 @@ public:
   {
     // Updating base views
     for (auto& [k, v] : data_) {
-      (*data_views_)[key] = view_type(v.begin(), v.end());
+      (*data_views_)[k] = view_type(v.begin(), v.end());
     }
 
     for (auto& req : view_request_[key]) {
