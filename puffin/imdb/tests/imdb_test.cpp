@@ -37,13 +37,10 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/benchmark/catch_benchmark.hpp>
 
-#include <iostream>
-#include <nlohmann/json.hpp>
 #include <puffin/imdb.hpp>
 #include <puffin/imdb/json/nlohmann.hpp>
 
 using namespace puffin::imdb;
-using json = nlohmann::json;
 
 json sample = R"(
   {
