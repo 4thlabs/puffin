@@ -53,7 +53,7 @@ inline std::string to_key(uint64_t id)
   return std::to_string(id);
 }
 
-template<typename Key, typename Value, typename Proj, typename Views>
+template<typename Key, typename Value, typename Proj = Value>
 class request
 {
 public:
@@ -68,9 +68,15 @@ public:
                                       Proj
                                     >;
 
+  using view_type = std::vector<std::reference_wrapper<Value>>;
+  using view_map = std::map<Key, view_type>;
+
   static constexpr auto filter_identity = [](const Value& v) constexpr { return true; };
 
-  request(std::shared_ptr<Views> v, transform_type&& f)
+  request()
+  {}
+
+  request(std::shared_ptr<view_map> v, transform_type&& f)
       : views_(v)
       , fn_transform_(f),
         fn_filter_(filter_identity)
@@ -78,7 +84,7 @@ public:
     id_ = reinterpret_cast<uint64_t>(this);
   }
 
-  request(std::shared_ptr<Views> v)
+  request(std::shared_ptr<view_map> v)
       : request(v, nullptr)
   {}
 
@@ -107,7 +113,7 @@ public:
 
   auto execute() -> std::vector<value_type>
   {
-    std::vector<std::reference_wrapper<Value>> res;
+    view_type res;
     auto r = (*views_)[from_] | std::views::filter(fn_filter_);
 
     // For future use
@@ -129,12 +135,10 @@ public:
     }
   }
 
-
-
 private:
   uint64_t id_;
 
-  std::shared_ptr<Views> views_;
+  std::shared_ptr<view_map> views_;
 
   transform_type fn_transform_;
   filter_type fn_filter_;

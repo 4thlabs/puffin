@@ -40,6 +40,7 @@
 #include <iostream>
 #include <nlohmann/json.hpp>
 #include <puffin/imdb.hpp>
+#include <puffin/imdb/json/nlohmann.hpp>
 
 using namespace puffin::imdb;
 using json = nlohmann::json;
@@ -72,23 +73,6 @@ auto f = [](const json& v) -> std::string {
   return "";
 };
 
-struct json_sort {
-  std::string key = "";
-
-  bool operator()(const json& v1, const json&v2) {
-    return (v1.contains(key) && v2.contains(key)) ? v1[key] < v2[key] : false;
-  }
-};
-
-struct json_contains {
-  std::string key = "";
-  std::string text = "";
-
-  bool operator()(const json& v1) {
-    return v1.contains(key) ? v1[key].get<std::string>().find(text) != std::string::npos : false;
-  }
-};
-
 TEST_CASE("imbd") {
 
   puffin::imdb::in_memory_database<std::string, json> db;
@@ -100,6 +84,16 @@ TEST_CASE("imbd") {
     REQUIRE(db.size("doc") == 3);
     REQUIRE_NOTHROW(db.insert("doc", sample));
     REQUIRE(db.size("doc") == 4);
+  }
+
+  SECTION("Can batch insert") {
+    std::list<json> l = {sample, sample2, sample3};
+    db.batch_insert("doc", l.begin(), l.end());
+
+    REQUIRE(db.size("doc") == 6);
+    REQUIRE(db.row("doc", 3)["number"] == 1);
+    REQUIRE(db.row("doc", 4)["number"] == 2);
+    REQUIRE(db.row("doc", 5)["number"] == 3);
   }
 
   SECTION("Can access data") {
@@ -188,23 +182,26 @@ TEST_CASE("imbd") {
   }
 }
 
-// TEST_CASE("Imdb Benchmark") {
-//   BENCHMARK_ADVANCED("10k Json")(Catch::Benchmark::Chronometer meter) {
-//     puffin::imdb::in_memory_database<std::string, json> db;
+TEST_CASE("Imdb Benchmark") {
+  BENCHMARK_ADVANCED("10k Json")(Catch::Benchmark::Chronometer meter) {
+    puffin::imdb::in_memory_database<std::string, json> db;
 
-//     for (int i = 0; i < 10000; i++) {
-//       db.insert("doc", sample, false);
+    for (int i = 0; i < 10000; i++) {
+      db.insert("doc", sample);
+    }
+    db.insert("doc", sample3);
 
-//     }
+    meter.measure([&]() {
+      auto req = db.select()
+                     .from("doc")
+                     .where(json_contains{.key = "title", .text = "Your"})
+                     .order_by(json_sort{.key = "number"});
 
-//     db.update_views("doc");
+      auto res = req.execute();
 
-//     meter.measure([&]() {
-//       auto req = db.select()
-//                      .from("doc")
-//                      .where(json_contains{.key = "title", .text = "My"});
-//                      //.order_by(json_sort{.key = "number"});
-//       return req.execute();
-//     });
-//   };
-// }
+      REQUIRE(res.size() == 1);
+
+      return res;
+    });
+  };
+}

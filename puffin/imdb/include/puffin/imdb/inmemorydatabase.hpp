@@ -43,7 +43,7 @@
 namespace puffin {
 namespace imdb {
 
-template<typename Key, typename Value, typename Proj, typename Views>
+template<typename Key, typename Value, typename Proj>
 class request;
 
 /**
@@ -51,7 +51,7 @@ class request;
  */
 template <typename Key,
           typename Value,
-          template <typename, typename...> typename Container = std::vector>
+          typename Allocator = std::allocator<Value>>
 class basic_in_memory_database
 {
 public:
@@ -60,19 +60,18 @@ public:
 
   using ref_value_type = std::reference_wrapper<value_type>;
 
-  using data_type = std::list<value_type>;
-  using view_type = Container<ref_value_type>;
+  using data_type = std::list<value_type, Allocator>;
+  using view_type = std::vector<ref_value_type>;
 
-  using data_map = std::map<key_type, data_type>;
   using view_map = std::map<key_type, view_type>;
 
   template<typename P>
-  using request_type = request<key_type, value_type, P, view_map>;
+  using request_type = request<key_type, value_type, P>;
 
   /**
    * The request map accepts only for now request without transformations
    */
-  using request_map = std::map<key_type, Container<request_type<value_type>>>;
+  using request_map = std::map<key_type, std::list<request_type<value_type>>>;
 
   basic_in_memory_database()
       : data_()
@@ -95,19 +94,19 @@ public:
     (*data_views_)[key] = req.execute();
   }
 
-  void insert(const key_type &key, const value_type &value, bool update = true)
+  void insert(const key_type &key, const value_type &value)
   {
-    data_[key].push_back(value);
-
-    if (update)
-      (*data_views_)[key].push_back(data_[key].back());
+    data_.push_back(value);
+    (*data_views_)[key].push_back(data_.back());
   }
 
   template<typename Iterator>
   void batch_insert(const key_type &key, Iterator begin, Iterator end)
   {
-    std::copy(begin, end, std::back_inserter(data_[key]));
-    update_views(key);
+    auto it = data_.end();
+    it--;
+    std::copy(begin, end, std::back_inserter(data_));
+    std::copy(++it, data_.end(), std::back_inserter((*data_views_)[key]));
   }
 
   std::size_t size(const key_type &key)
@@ -142,11 +141,6 @@ public:
    */
   void update_views(const key_type& key)
   {
-    // Updating base views
-    for (auto& [k, v] : data_) {
-      (*data_views_)[k] = view_type(v.begin(), v.end());
-    }
-
     for (auto& req : view_request_[key]) {
       (*data_views_)[key] = req.execute();
     }
@@ -156,7 +150,7 @@ private:
   std::shared_ptr<view_map> data_views_;
   request_map view_request_;
 
-  data_map data_;
+  data_type data_;
 };
 
 template <typename Key, typename Value>
