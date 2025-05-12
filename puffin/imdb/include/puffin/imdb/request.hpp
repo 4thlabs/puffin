@@ -37,6 +37,7 @@
 #ifndef PUFFIN_IMDB_REQUEST_HPP
 #define PUFFIN_IMDB_REQUEST_HPP
 
+#include <puffin/imdb/imdb_traits.hpp>
 #include <functional>
 #include <ranges>
 
@@ -53,30 +54,32 @@ inline std::string to_key(uint64_t id)
   return std::to_string(id);
 }
 
-template<typename Key, typename Value, typename Proj = Value>
+template<typename Key, typename Value, typename Proj = Value, typename Traits = imdb_traits<Key, Value>>
 class request
 {
 public:
-  using transform_type = std::function<Proj(const Value&)>;
-  using filter_type = std::function<bool(const Value&)>;
-  using order_type = std::function<bool(const Value&, const Value&)>;
+  using fn_transform_type = std::function<Proj(const Value&)>;
 
+  using fn_filter_type = Traits::fn_filter_type;
+  using fn_order_type = Traits::fn_order_type;
+
+  using key_type = Traits::key_type;
   using value_type = std::conditional_t
                                     <
                                       std::is_same<Value, Proj>::value,
-                                      std::reference_wrapper<Value>,
+                                      typename Traits::ref_value_type,
                                       Proj
                                     >;
 
-  using view_type = std::vector<std::reference_wrapper<Value>>;
-  using view_map = std::map<Key, view_type>;
+  using view_type = Traits::view_type;
+  using view_map = Traits::view_map;
 
   static constexpr auto filter_identity = [](const Value& v) constexpr { return true; };
 
   request()
   {}
 
-  request(std::shared_ptr<view_map> v, transform_type&& f)
+  request(std::shared_ptr<view_map> v, fn_transform_type&& f)
       : views_(v)
       , fn_transform_(f),
         fn_filter_(filter_identity)
@@ -88,24 +91,24 @@ public:
       : request(v, nullptr)
   {}
 
-  const Key& from()
+  const key_type& from()
   {
     return from_;
   }
 
-  request& from(const Key& from)
+  request& from(const key_type& from)
   {
     from_ = from;
     return *this;
   }
 
-  request& where(filter_type&& f)
+  request& where(fn_filter_type&& f)
   {
     fn_filter_ = f;
     return *this;
   }
 
-  request& order_by(order_type&& f)
+  request& order_by(fn_order_type&& f)
   {
     fn_order_ = f;
     return *this;
@@ -140,11 +143,11 @@ private:
 
   std::shared_ptr<view_map> views_;
 
-  transform_type fn_transform_;
-  filter_type fn_filter_;
-  order_type fn_order_ = nullptr;
+  fn_transform_type fn_transform_;
+  fn_filter_type fn_filter_;
+  fn_order_type fn_order_ = nullptr;
 
-  Key from_;
+  key_type from_;
 };
 
 } // namespace imdb

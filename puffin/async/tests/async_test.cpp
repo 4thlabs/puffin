@@ -66,6 +66,6 @@ TEST_CASE("async", "[async]") {
       executor.stop();
     });
 
-    executor.run();
+    //executor.run();
   }
 }

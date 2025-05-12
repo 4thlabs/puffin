@@ -37,13 +37,14 @@
 #ifndef PUFFIN_IMDB_INMEMORYDATABASE_HPP
 #define PUFFIN_IMDB_INMEMORYDATABASE_HPP
 
-#include <map>
+#include <puffin/imdb/imdb_traits.hpp>
 #include <list>
+#include <map>
 
 namespace puffin {
 namespace imdb {
 
-template<typename Key, typename Value, typename Proj>
+template<typename Key, typename Value, typename Proj, typename Traits>
 class request;
 
 /**
@@ -51,22 +52,24 @@ class request;
  */
 template <typename Key,
           typename Value,
-          typename Allocator = std::allocator<Value>>
+          typename Traits = imdb_traits<Key, Value>>
 class basic_in_memory_database
 {
 public:
-  using key_type   = Key;
-  using value_type = Value;
+  using key_type   = Traits::key_type;
+  using value_type = Traits::value_type;
 
-  using ref_value_type = std::reference_wrapper<value_type>;
+  using ref_value_type = Traits::ref_value_type;
 
-  using data_type = std::list<value_type, Allocator>;
-  using view_type = std::vector<ref_value_type>;
+  using data_type = Traits::data_type;
+  using view_type = Traits::view_type;
 
-  using view_map = std::map<key_type, view_type>;
+  using view_map = Traits::view_map;
+
+  using index_map = Traits::index_map;
 
   template<typename P>
-  using request_type = request<key_type, value_type, P>;
+  using request_type = request<key_type, value_type, P, Traits>;
 
   /**
    * The request map accepts only for now request without transformations
@@ -76,6 +79,7 @@ public:
   basic_in_memory_database()
       : data_()
       , data_views_(std::make_shared<view_map>())
+      , indexes_(std::make_shared<index_map>())
   {}
 
   ~basic_in_memory_database() {}
@@ -148,6 +152,8 @@ public:
 
 private:
   std::shared_ptr<view_map> data_views_;
+  std::shared_ptr<index_map> indexes_;
+
   request_map view_request_;
 
   data_type data_;

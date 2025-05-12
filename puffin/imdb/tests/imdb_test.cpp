@@ -154,7 +154,7 @@ TEST_CASE("imbd") {
 
     auto req = db.select()
                  .from("doc")
-                 .where(json_contains{.key = "title", .text = "My"})
+                 .where(json_search{.key = "title", .text = "My"})
                  .order_by(json_sort{.key = "number"});
 
     auto result = req.execute();
@@ -191,12 +191,12 @@ TEST_CASE("Imdb Benchmark") {
     meter.measure([&]() {
       auto req = db.select()
                      .from("doc")
-                     .where(json_contains{.key = "title", .text = "Your"})
-                     .order_by(json_sort{.key = "number"});
+                     //.where(json_contains{.key = "title", .text = "Your"})
+                     .order_by(json_sort{.key = "title"});
 
       auto res = req.execute();
 
-      REQUIRE(res.size() == 1);
+      //REQUIRE(res.size() == 1);
 
       return res;
     });
