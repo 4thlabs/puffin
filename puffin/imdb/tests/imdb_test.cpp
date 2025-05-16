@@ -191,7 +191,7 @@ TEST_CASE("Imdb Benchmark") {
     meter.measure([&]() {
       auto req = db.select()
                      .from("doc")
-                     //.where(json_contains{.key = "title", .text = "Your"})
+                     .where(json_search{.key = "title", .text = "Title"})
                      .order_by(json_sort{.key = "title"});
 
       auto res = req.execute();

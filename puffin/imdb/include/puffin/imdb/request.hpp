@@ -38,10 +38,9 @@
 #define PUFFIN_IMDB_REQUEST_HPP
 
 #include <puffin/imdb/imdb_traits.hpp>
+#include <puffin/imdb/ranges/to_vector.hpp>
 #include <functional>
 #include <ranges>
-
-#include <nlohmann/json.hpp>
 
 namespace puffin {
 namespace imdb {
@@ -116,15 +115,12 @@ public:
 
   auto execute() -> std::vector<value_type>
   {
-    view_type res;
-    auto r = (*views_)[from_] | std::views::filter(fn_filter_);
+    view_type res {
+      (*views_)[from_]
+        | std::views::filter(fn_filter_)
+        | puffin::ranges::to_vector()
+    };
 
-    // For future use
-    if constexpr (requires { std::ranges::size(r); }) {
-      res.reserve(std::ranges::size(r));
-    }
-
-    res.insert(res.begin(), r.begin(), r.end());
 
     if (fn_order_) {
       std::ranges::sort(res, fn_order_);
