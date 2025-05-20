@@ -98,10 +98,30 @@ public:
     (*data_views_)[key] = req.execute();
   }
 
-  void insert(const key_type &key, const value_type &value)
+  /**
+   * @brief Crates an index based on a function
+   * @param table - The data table key
+   * @param index - the index key ( Name )
+   * @param f - Function that returns a list of keys for a specific object
+   */
+  template<typename F>
+  void create_index(const key_type& table, const key_type& index, F&& f)
+  {
+    for (auto& value : (*data_views_)[table]) {
+      auto list = f(value);
+
+      for (auto& i : list) {
+        (*indexes_)[index].insert({i, value});
+      }
+    }
+  }
+
+  ref_value_type insert(const key_type &key, const value_type &value)
   {
     data_.push_back(value);
     (*data_views_)[key].push_back(data_.back());
+
+    return (*data_views_)[key].back();
   }
 
   template<typename Iterator>
@@ -118,9 +138,26 @@ public:
     return (*data_views_)[key].size();
   }
 
+  /**
+   * @brief Returns a row from a table based on it's indec
+   * @param key - The table key
+   * @param index - the row numeric index
+   * @return value_type&
+   */
   value_type& row(const key_type& key, int index)
   {
     return (*data_views_)[key].at(index).get();
+  }
+
+  /**
+   * @brief This version of row gets a value from an index, can throws
+   * @param key
+   * @param index
+   * @return
+   */
+  value_type& row(const key_type& key, const key_type& index)
+  {
+    return (*indexes_)[key].at(index).get();
   }
 
   view_type &data(const key_type &key)
@@ -137,6 +174,11 @@ public:
   auto select(F&& f) const -> request_type<decltype(std::declval<F>()(std::declval<Value>()))>
   {
     return request_type<decltype(std::declval<F>()(std::declval<Value>()))>(data_views_, std::forward<F>(f));
+  }
+
+  template<typename Q>
+  auto query(Q query) {
+    return query.execute((*data_views_));
   }
 
   /**

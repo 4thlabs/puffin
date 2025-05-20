@@ -37,9 +37,11 @@
 #ifndef PUFFIN_IMDB_REQUEST_HPP
 #define PUFFIN_IMDB_REQUEST_HPP
 
+#include <algorithm>
+#include <concepts>
+#include <functional>
 #include <puffin/imdb/imdb_traits.hpp>
 #include <puffin/imdb/ranges/to_vector.hpp>
-#include <functional>
 #include <ranges>
 
 namespace puffin {
@@ -76,6 +78,7 @@ public:
   static constexpr auto filter_identity = [](const Value& v) constexpr { return true; };
 
   request()
+    : fn_filter_(filter_identity)
   {}
 
   request(std::shared_ptr<view_map> v, fn_transform_type&& f)
@@ -121,6 +124,25 @@ public:
         | puffin::ranges::to_vector()
     };
 
+    if (fn_order_) {
+      std::ranges::sort(res, fn_order_);
+    }
+
+    if constexpr (std::is_same<Value, Proj>::value) {
+      return res;
+    } else {
+      auto t = res | std::views::transform(fn_transform_);
+      return std::vector<Proj>(t.begin(), t.end());
+    }
+  }
+
+  template<typename C>
+  auto execute(C& views) {
+    view_type res {
+      views[from_]
+        | std::views::filter(fn_filter_)
+        | puffin::ranges::to_vector()
+    };
 
     if (fn_order_) {
       std::ranges::sort(res, fn_order_);
@@ -133,6 +155,7 @@ public:
       return std::vector<Proj>(t.begin(), t.end());
     }
   }
+
 
 private:
   uint64_t id_;

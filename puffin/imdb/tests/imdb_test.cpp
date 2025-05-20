@@ -44,6 +44,7 @@ using namespace puffin::imdb;
 
 json sample = R"(
   {
+    "uuid": "1",
     "number": 1,
     "title": "My Title",
     "type": ["Standard"]
@@ -52,6 +53,7 @@ json sample = R"(
 
 json sample2 = R"(
   {
+    "uuid": "2",
     "number": 2,
     "title": "Another My Title",
     "type": ["Hyperspace"]
@@ -60,6 +62,7 @@ json sample2 = R"(
 
 json sample3 = R"(
   {
+    "uuid": "3",
     "number": 3,
     "title": "Your Title",
     "type": ["OP Promo"]
@@ -106,6 +109,15 @@ TEST_CASE("imbd") {
 
     auto req = db.select().from("doc");
     auto result = req.execute();
+
+    REQUIRE(result.size() > 0);
+    REQUIRE(result[0].get()["number"] == 1);
+  }
+
+    SECTION("Can select data") {
+
+    auto req = request<std::string, json>().from("doc");
+    auto result = db.query(req);
 
     REQUIRE(result.size() > 0);
     REQUIRE(result[0].get()["number"] == 1);
@@ -177,13 +189,25 @@ TEST_CASE("imbd") {
     REQUIRE(result[1].get()["number"] == 2);
     REQUIRE(result[2].get()["number"] == 3);
   }
+
+  SECTION("Can create index") {
+    db.create_index("doc", "doc_index_uuid", [](const json& v) -> std::list<std::string> {
+      return {v["uuid"]};
+    });
+
+    REQUIRE_THROWS(db.row("doc_index_uuid", "5"));
+
+    auto& value = db.row("doc_index_uuid", "2");
+
+    REQUIRE(value["uuid"] == "2");
+  }
 }
 
 TEST_CASE("Imdb Benchmark") {
-  BENCHMARK_ADVANCED("10k Json")(Catch::Benchmark::Chronometer meter) {
+  BENCHMARK_ADVANCED("1k Json")(Catch::Benchmark::Chronometer meter) {
     puffin::imdb::in_memory_database<std::string, json> db;
 
-    for (int i = 0; i < 10000; i++) {
+    for (int i = 0; i < 1000; i++) {
       db.insert("doc", sample);
     }
     db.insert("doc", sample3);
