@@ -168,6 +168,73 @@ Adapters, built when their dependency is found:
 - `puffin::webkit_qt` (`<puffin/webkit/qt.hpp>`, Qt 6 Network): `qt::tcp_stream`,
   `qt::tcp_acceptor`, `qt::tcp_connector`, used with `puffin::async::qt::executor`.
 
+### Rest
+
+A DSL describing REST apis once, to serve them and to call them (`puffin::rest`, header only, on
+top of `puffin::webkit`). JSON bodies with `puffin::rest_json` (nlohmann::json).
+
+```c++
+#include <puffin/rest.hpp>
+#include <puffin/rest/json.hpp>
+
+namespace rest = puffin::rest;
+
+namespace users {
+using namespace puffin::rest;
+
+struct list   : endpoint<GET,    "/",         query<"limit", std::optional<int>>, returns<std::vector<user>>> {};
+struct get    : endpoint<GET,    "/{id:int}", returns<user>> {};
+struct create : endpoint<POST,   "/",         body<new_user>, returns<user, status::created>> {};
+struct remove : endpoint<DELETE, "/{id:int}"> {}; // 204
+
+using api = rest::api<"/users", list, get, create, remove>;
+}
+
+using v1 = rest::api<"/api/v1", auth::api, rest::with<rest::security<rest::api_key<"X-Api-Key">>, users::api>>;
+```
+
+Server: one `operator()(Endpoint, args...)` per endpoint, checked at compile time.
+
+```c++
+struct users_service {
+  async<std::vector<user>> operator()(users::list, std::optional<int> limit);
+  async<user> operator()(users::get, int id);  // optionally the context as last argument
+  user operator()(users::create, new_user u);
+  void operator()(users::remove, int id);
+};
+
+rest::mount<v1>(server, auth_service{}, users_service{},
+                rest::validators([](const rest::api_key_value& k) { return k.value == key; }),
+                rest::interceptors(access_log{}));
+```
+
+Client: the same description, over a webkit `Connector` or any `Transport`.
+
+```c++
+rest::client<v1, wk::asio::tcp_connector, rest::intercept::api_key, rest::intercept::retry> api(connector, "host", 80);
+api.interceptor<rest::intercept::api_key>().key("...");
+
+user u = co_await api.call<users::get>(42);
+auto page = co_await api.call<users::list>();           // trailing optionals may be omitted
+rest::result<user> r = co_await api.try_call<users::get>(7); // errors as values
+```
+
+- Path parameters `{name:type}`: `int`, `int64`, `uint`, `uint64`, `double`, `bool`, `string`
+  (default), `path` (rest of the path). Parsed at compile time.
+- Parts: `query<"name", T>` (`optional<T>`, `vector<T>`), `header<"Name", T>`, `body<T, Codec>`,
+  `returns<T, status, Codec>`, `security<api_key<"Header">, api_key_query<"param">, bearer_auth>`.
+- Arguments, server and client alike: path parameters, the endpoint parts in order, then the parts
+  inherited from `with<>`. Security schemes are not arguments.
+- `api<"/prefix", ...>` nests, prefixes may have parameters (`"/users/{user_id:int}/cards"`),
+  `client::scope<SubApi>(args...)` fixes the leading ones.
+- Server errors: 400 invalid arguments or body, 415 wrong Content-Type, 401 missing or rejected
+  credentials, `http_error` its status as `{"error": "..."}`, other exceptions 500.
+- Interceptors, server `(Info, ctx, next_handler)` and client `(Info, request&, next_request)`;
+  client ones provided: `intercept::api_key`, `intercept::bearer` (refresh on 401),
+  `intercept::retry`. `client::headers()` adds headers to every request.
+- `param_traits<T>` converts parameters (`enum_param<E, "a", "b">` for enums), `Codec` encodes
+  bodies, `local_transport` calls a server in process.
+
 ### Ioc
 ### Maths
 
