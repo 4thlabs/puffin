@@ -38,114 +38,137 @@
 #define PUFFIN_ASYNC_THREAD_EXECUTOR_HPP
 
 #include <puffin/async/executor.hpp>
+#include <puffin/async/schedule.hpp>
 
-#include <thread>
+#include <atomic>
 #include <condition_variable>
 #include <coroutine>
-#include <stack>
+#include <deque>
+#include <mutex>
+#include <thread>
 
 namespace puffin {
 namespace async {
 
 /**
- * @brief A very basic single thread executor
+ * @brief A basic single thread executor, resuming coroutines in posting order.
+ *
+ * run() pumps on the calling thread (or on a thread it owns with run(false)) until stop().
+ * Coroutines still queued when it stops are not resumed.
  */
 class thread_executor final {
 public:
-  struct awaitable {
-    awaitable(thread_executor* e)
-        : executor(e)
-    {}
+  thread_executor() = default;
 
-    bool await_ready() { return false; }
+  thread_executor(const thread_executor&) = delete;
+  thread_executor& operator=(const thread_executor&) = delete;
 
-    template<typename P>
-    void await_suspend(std::coroutine_handle<P> h) const noexcept {
-      h.promise().executor = executor;
-      executor->post(h);
-    }
-
-    void await_resume() {}
-
-    thread_executor* executor;
-  };
-
-  thread_executor()
-      :running_(false)
-  {}
-
-  ~thread_executor() {}
-
-  void wait() {
-    stop();
-    if (thread_.joinable())
-      thread_.join();
-  }
+  ~thread_executor() { wait(); }
 
   void post(std::coroutine_handle<> h)
   {
-    std::lock_guard<std::mutex> lock(stack_mutex_);
-    frames_.push(h);
+    // Notify under the lock: once h is queued, the executor may be destroyed as soon as the lock
+    // is released
+    std::lock_guard<std::mutex> lock(mutex_);
+    queue_.push_back(h);
+    cv_.notify_one();
+  }
+
+  /**
+   * @brief Moves the awaiting coroutine to this executor: co_await executor.schedule();
+   */
+  schedule_on schedule() { return schedule_on { *this }; }
+
+  /**
+   * @brief Runs the loop, blocking on the calling thread or on an owned thread
+   */
+  void run(bool blocking = true)
+  {
+    if (blocking)
+      pump();
+    else
+      thread_ = std::thread(&thread_executor::pump, this);
+  }
+
+  /**
+   * @brief Asks the loop to return once the current coroutine is suspended
+   */
+  void stop()
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    stopped_ = true;
     cv_.notify_all();
   }
 
-  awaitable schedule() {
-    return awaitable {this};
+  /**
+   * @brief Allows run() to be called again after a stop()
+   */
+  void restart()
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    stopped_ = false;
   }
 
-  void run(bool blocking = true) {
-    running_ = true;
-    thread_ = std::thread(&thread_executor::pump, this);
+  /**
+   * @brief Stops and joins the owned thread, if any
+   */
+  void wait()
+  {
+    stop();
 
-    if (blocking)
+    if (!thread_.joinable())
+      return;
+
+    if (thread_.get_id() == std::this_thread::get_id())
+      thread_.detach();
+    else
       thread_.join();
   }
 
-  void stop() {
-    running_ = false;
-    cv_.notify_all();
-  }
+  bool running_in_this_thread() const noexcept { return running_thread_ == std::this_thread::get_id(); }
 
 private:
-
-  std::coroutine_handle<> pop() {
-    std::lock_guard<std::mutex> lock(stack_mutex_);
-    auto res = frames_.top();
-    frames_.pop();
-    return res;
-  }
-
-  bool empty() {
-    std::lock_guard<std::mutex> lock(stack_mutex_);
-    return frames_.empty();
-  }
-
   void pump()
   {
-    using namespace std::chrono_literals;
+    running_thread_ = std::this_thread::get_id();
 
-    while(running_) {
-      std::unique_lock<std::mutex> lk(cv_mutex_);
-      cv_.wait(lk, [&]() { return !empty() || !running_; });
+    while (true) {
+      std::coroutine_handle<> h;
 
-      if (!empty()) {
-        auto coro = pop();
+      {
+        std::unique_lock<std::mutex> lock(mutex_);
+        cv_.wait(lock, [&] { return stopped_ || !queue_.empty(); });
 
-        if (!coro.done())
-          coro.resume();
+        if (stopped_)
+          break;
+
+        h = queue_.front();
+        queue_.pop_front();
       }
+
+      h.resume();
     }
+
+    running_thread_ = std::thread::id {};
   }
 
-private:
-  std::atomic<bool> running_;
-
-  std::stack<std::coroutine_handle<>> frames_;
-  std::thread thread_;
-
+  std::mutex mutex_;
   std::condition_variable cv_;
-  std::mutex stack_mutex_;
-  std::mutex cv_mutex_;
+  std::deque<std::coroutine_handle<>> queue_;
+  bool stopped_ = false;
+
+  std::thread thread_;
+  std::atomic<std::thread::id> running_thread_ {};
+};
+
+/**
+ * @brief Resumes coroutines inline, in post(). Mostly useful for tests.
+ */
+class inline_executor final {
+public:
+  void post(std::coroutine_handle<> h) const { h.resume(); }
+
+  friend bool operator==(const inline_executor&, const inline_executor&) noexcept { return true; }
 };
 
 }

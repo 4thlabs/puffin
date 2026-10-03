@@ -34,16 +34,73 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PUFFIN_ASYNC_HPP
-#define PUFFIN_ASYNC_HPP
+#ifndef PUFFIN_ASYNC_SYNC_WAIT_HPP
+#define PUFFIN_ASYNC_SYNC_WAIT_HPP
 
 #include <puffin/async/async.hpp>
 #include <puffin/async/co_spawn.hpp>
 #include <puffin/async/executor.hpp>
-#include <puffin/async/from_callback.hpp>
-#include <puffin/async/impl/thread_executor.hpp>
-#include <puffin/async/schedule.hpp>
-#include <puffin/async/sync_wait.hpp>
-#include <puffin/async/when_all.hpp>
 
-#endif // PUFFIN_ASYNC_HPP
+#include <condition_variable>
+#include <exception>
+#include <mutex>
+#include <optional>
+#include <type_traits>
+
+namespace puffin {
+namespace async {
+
+/**
+ * @brief Blocks the calling thread until the task is done and returns its result (or rethrows).
+ *
+ * With an executor, the task is started on it. Without, it starts inline on the calling thread
+ * and continues wherever its awaits resume it. Never call it from a thread the task needs to make
+ * progress (e.g. the thread running its executor).
+ */
+template<typename T>
+T sync_wait(any_executor executor, async<T> task)
+{
+  std::mutex mutex;
+  std::condition_variable cv;
+  bool done = false;
+
+  std::exception_ptr exception;
+  std::conditional_t<std::is_void_v<T>, bool, std::optional<T>> value {};
+
+  auto entry = [&]() -> detail::detached_task {
+    try {
+      if constexpr (std::is_void_v<T>)
+        co_await std::move(task);
+      else
+        value.emplace(co_await std::move(task));
+    } catch (...) {
+      exception = std::current_exception();
+    }
+
+    std::lock_guard<std::mutex> lock(mutex);
+    done = true;
+    cv.notify_all();
+  };
+
+  entry().start(std::move(executor));
+
+  std::unique_lock<std::mutex> lock(mutex);
+  cv.wait(lock, [&] { return done; });
+
+  if (exception)
+    std::rethrow_exception(exception);
+
+  if constexpr (!std::is_void_v<T>)
+    return std::move(*value);
+}
+
+template<typename T>
+T sync_wait(async<T> task)
+{
+  return sync_wait(any_executor {}, std::move(task));
+}
+
+}
+}
+
+#endif // PUFFIN_ASYNC_SYNC_WAIT_HPP
