@@ -34,26 +34,74 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PUFFIN_WEBKIT_URI_EXCEPTIONS_HPP
-#define PUFFIN_WEBKIT_URI_EXCEPTIONS_HPP
+#ifndef PUFFIN_WEBKIT_MIDDLEWARES_COOKIES_HPP
+#define PUFFIN_WEBKIT_MIDDLEWARES_COOKIES_HPP
 
-#include <stdexcept>
-#include <string>
+#include <puffin/webkit/http/cookie.hpp>
+
+#include <optional>
+#include <string_view>
+#include <vector>
 
 namespace puffin {
 namespace webkit {
+namespace middlewares {
 
 /**
- * @brief Thrown when an uri can't be parsed
+ * @brief Parses the request cookies and emits the cookies set by the handler.
+ *
+ * Adds to the context: ctx.cookies(), ctx.cookie(name) and ctx.set_cookie(cookie).
  */
-class uri_parsing_error : public std::runtime_error {
+class cookies {
 public:
-  explicit uri_parsing_error(const std::string& uri)
-      : std::runtime_error("Failed to parse uri: " + uri)
-  {}
+  class data_type {
+  public:
+    /// Cookies sent by the client
+    const cookie_map& cookies() const { return received_; }
+
+    std::optional<std::string_view> cookie(std::string_view name) const
+    {
+      auto it = received_.find(name);
+
+      if (it == received_.end())
+        return std::nullopt;
+
+      return std::string_view(it->second);
+    }
+
+    /// Sends a cookie to the client with the response
+    void set_cookie(webkit::cookie c) { sent_.push_back(std::move(c)); }
+
+  private:
+    friend class middlewares::cookies;
+
+    cookie_map received_;
+    std::vector<webkit::cookie> sent_;
+  };
+
+  template<typename Context>
+  void before(Context& ctx)
+  {
+    auto& data = ctx.template data<cookies>();
+
+    for (auto value : ctx.request().headers().get_all("Cookie")) {
+      for (auto& [name, v] : parse_cookie_header(value))
+        data.received_.emplace(name, std::move(v));
+    }
+  }
+
+  template<typename Context>
+  void after(Context& ctx)
+  {
+    auto& data = ctx.template data<cookies>();
+
+    for (const auto& c : data.sent_)
+      ctx.response().headers().add("Set-Cookie", c.str());
+  }
 };
 
+} // namespace middlewares
 } // namespace webkit
 } // namespace puffin
 
-#endif // PUFFIN_WEBKIT_URI_EXCEPTIONS_HPP
+#endif // PUFFIN_WEBKIT_MIDDLEWARES_COOKIES_HPP

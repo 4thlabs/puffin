@@ -34,26 +34,59 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PUFFIN_WEBKIT_URI_EXCEPTIONS_HPP
-#define PUFFIN_WEBKIT_URI_EXCEPTIONS_HPP
+#ifndef PUFFIN_WEBKIT_DETAIL_AWAITABLE_HPP
+#define PUFFIN_WEBKIT_DETAIL_AWAITABLE_HPP
 
-#include <stdexcept>
-#include <string>
+#include <concepts>
+#include <coroutine>
+#include <utility>
+
+// TODO: Move to puffin::async once its API is settled
 
 namespace puffin {
 namespace webkit {
+namespace detail {
+
+template<typename T>
+concept awaiter = requires(T& a, std::coroutine_handle<> h) {
+  { a.await_ready() } -> std::convertible_to<bool>;
+  a.await_suspend(h);
+  a.await_resume();
+};
+
+template<typename T>
+decltype(auto) get_awaiter(T&& t)
+{
+  if constexpr (requires { std::forward<T>(t).operator co_await(); })
+    return std::forward<T>(t).operator co_await();
+  else if constexpr (requires { operator co_await(std::forward<T>(t)); })
+    return operator co_await(std::forward<T>(t));
+  else
+    return std::forward<T>(t);
+}
+
+template<typename T>
+using awaiter_t = decltype(get_awaiter(std::declval<T>()));
+
+} // namespace detail
 
 /**
- * @brief Thrown when an uri can't be parsed
+ * @brief Anything usable with co_await (an awaiter, or a type with operator co_await)
  */
-class uri_parsing_error : public std::runtime_error {
-public:
-  explicit uri_parsing_error(const std::string& uri)
-      : std::runtime_error("Failed to parse uri: " + uri)
-  {}
-};
+template<typename T>
+concept Awaitable = detail::awaiter<std::remove_reference_t<detail::awaiter_t<T>>>;
+
+/// The type produced by co_await on an awaitable
+template<Awaitable T>
+using await_result_t = decltype(std::declval<detail::awaiter_t<T>&>().await_resume());
+
+/**
+ * @brief An awaitable whose co_await produces a value convertible to R
+ */
+template<typename T, typename R>
+concept AwaitableOf = Awaitable<T> && std::convertible_to<await_result_t<T>, R>;
 
 } // namespace webkit
 } // namespace puffin
 
-#endif // PUFFIN_WEBKIT_URI_EXCEPTIONS_HPP
+#endif // PUFFIN_WEBKIT_DETAIL_AWAITABLE_HPP

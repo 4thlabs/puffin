@@ -34,26 +34,59 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PUFFIN_WEBKIT_URI_EXCEPTIONS_HPP
-#define PUFFIN_WEBKIT_URI_EXCEPTIONS_HPP
+#include <puffin/async.hpp>
+#include <puffin/async/adapter/asio.hpp>
+#include <puffin/webkit.hpp>
+#include <puffin/webkit/adapter/asio.hpp>
 
-#include <stdexcept>
+#include <asio/signal_set.hpp>
+
+#include <chrono>
+#include <cstdlib>
+#include <iostream>
 #include <string>
 
-namespace puffin {
-namespace webkit {
+namespace pa = puffin::async;
+namespace wk = puffin::webkit;
 
-/**
- * @brief Thrown when an uri can't be parsed
- */
-class uri_parsing_error : public std::runtime_error {
-public:
-  explicit uri_parsing_error(const std::string& uri)
-      : std::runtime_error("Failed to parse uri: " + uri)
-  {}
-};
+using namespace std::chrono_literals;
 
-} // namespace webkit
-} // namespace puffin
+// Counts the visits of each client in its session cookie:
+//   curl -c jar -b jar http://127.0.0.1:8080/visits
+int main(int argc, char** argv)
+{
+  std::uint16_t port = argc > 1 ? static_cast<std::uint16_t>(std::atoi(argv[1])) : 8080;
 
-#endif // PUFFIN_WEBKIT_URI_EXCEPTIONS_HPP
+  ::asio::io_context io;
+  pa::asio::executor executor{io};
+
+  wk::basic_server<wk::middlewares::cookies, wk::middlewares::session> server;
+
+  server.get("/", [](auto& ctx) { ctx.response().body("Hello from puffin\n", "text/plain"); });
+
+  server.get("/visits", [](auto& ctx) {
+    auto& visits = ctx.session()["visits"];
+    visits = std::to_string(visits.empty() ? 1 : std::stoi(visits) + 1);
+    ctx.response().body("Visits: " + visits + "\n", "text/plain");
+  });
+
+  server.get("/wait/([0-9]+)", [executor](auto& ctx) -> pa::async<void> {
+    co_await pa::asio::sleep_for(executor, std::chrono::milliseconds(std::stoi(std::string(ctx.param(0)))));
+    ctx.response().body("Waited\n", "text/plain");
+  });
+
+  wk::asio::tcp_acceptor acceptor(io, port);
+  std::cout << "Listening on http://0.0.0.0:" << acceptor.port() << std::endl;
+
+  pa::co_spawn(executor, server.listen(acceptor), [](std::exception_ptr e) {
+    if (e)
+      std::cerr << "Server stopped with an error" << std::endl;
+  });
+
+  // Ctrl+C closes the acceptor, run() returns once the connections are done
+  ::asio::signal_set signals(io, SIGINT, SIGTERM);
+  signals.async_wait([&](auto, int) { acceptor.close(); });
+
+  io.run();
+  return 0;
+}

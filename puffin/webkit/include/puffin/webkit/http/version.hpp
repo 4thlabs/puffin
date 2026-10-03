@@ -34,26 +34,31 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PUFFIN_WEBKIT_URI_EXCEPTIONS_HPP
-#define PUFFIN_WEBKIT_URI_EXCEPTIONS_HPP
+#ifndef PUFFIN_WEBKIT_HTTP_VERSION_HPP
+#define PUFFIN_WEBKIT_HTTP_VERSION_HPP
 
-#include <stdexcept>
+#include <compare>
 #include <string>
 
 namespace puffin {
 namespace webkit {
 
 /**
- * @brief Thrown when an uri can't be parsed
+ * @brief HTTP protocol version (HTTP/major.minor)
  */
-class uri_parsing_error : public std::runtime_error {
-public:
-  explicit uri_parsing_error(const std::string& uri)
-      : std::runtime_error("Failed to parse uri: " + uri)
-  {}
+struct version {
+  int major = 1;
+  int minor = 1;
+
+  friend constexpr auto operator<=>(const version&, const version&) = default;
+
+  std::string str() const { return "HTTP/" + std::to_string(major) + "." + std::to_string(minor); }
 };
+
+inline constexpr version http_1_0{1, 0};
+inline constexpr version http_1_1{1, 1};
 
 } // namespace webkit
 } // namespace puffin
 
-#endif // PUFFIN_WEBKIT_URI_EXCEPTIONS_HPP
+#endif // PUFFIN_WEBKIT_HTTP_VERSION_HPP
