@@ -150,8 +150,10 @@ public:
   {
     auto& result = this->result();
 
-    if constexpr (!Throw || sizeof...(Args) == 0) {
+    if constexpr (!Throw) {
       return std::move(result);
+    } else if constexpr (sizeof...(Args) == 0) {
+      return;
     } else {
       using first_type = std::tuple_element_t<0, std::tuple<Args...>>;
 

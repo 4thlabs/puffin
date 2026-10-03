@@ -97,7 +97,8 @@ int main() {
 - `any_executor`: type erased executor (anything with `post(std::coroutine_handle<>)`). An lvalue is
   referenced, an rvalue is owned.
 - `co_spawn(executor, task_or_factory, completion)`: starts a detached task. `completion` takes
-  `(std::exception_ptr)` or `(std::exception_ptr, T)`.
+  `(std::exception_ptr)` or `(std::exception_ptr, T)`. The default (`detached`) silently drops
+  exceptions, and a throwing completion calls `std::terminate`.
 - `sync_wait`, `when_all` (variadic or `std::vector`), `schedule_on(executor)`, `this_executor`.
 - `from_callback<Args...>(initiate)`: awaits any callback based operation, the coroutine resumes on
   its own executor.
