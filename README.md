@@ -97,7 +97,8 @@ int main() {
 - `any_executor`: type erased executor (anything with `post(std::coroutine_handle<>)`). An lvalue is
   referenced, an rvalue is owned.
 - `co_spawn(executor, task_or_factory, completion)`: starts a detached task. `completion` takes
-  `(std::exception_ptr)` or `(std::exception_ptr, T)`.
+  `(std::exception_ptr)` or `(std::exception_ptr, T)`. The default (`detached`) silently drops
+  exceptions, and a throwing completion calls `std::terminate`.
 - `sync_wait`, `when_all` (variadic or `std::vector`), `schedule_on(executor)`, `this_executor`.
 - `from_callback<Args...>(initiate)`: awaits any callback based operation, the coroutine resumes on
   its own executor.
@@ -105,7 +106,7 @@ int main() {
 
 Adapters, built when their dependency is found:
 
-- `puffin::async_asio` (`<puffin/async/asio.hpp>`, standalone asio or Boost.Asio with
+- `puffin::async_asio` (`<puffin/async/adapter/asio.hpp>`, standalone asio or Boost.Asio with
   `PUFFIN_ASYNC_USE_BOOST_ASIO`): `asio::executor { io_context }`, the `asio::use_async` /
   `asio::use_async_tuple` completion tokens, `asio::sleep_for`.
 
@@ -113,7 +114,7 @@ Adapters, built when their dependency is found:
   std::size_t n = co_await socket.async_read_some(buffer, puffin::async::asio::use_async);
   ```
 
-- `puffin::async_qt` (`<puffin/async/qt.hpp>`, Qt 6): `qt::executor { context_object }`,
+- `puffin::async_qt` (`<puffin/async/adapter/qt.hpp>`, Qt 6): `qt::executor { context_object }`,
   `co_await qt::signal(sender, &Sender::signal)`, `qt::sleep_for`.
 
 ### Webkit

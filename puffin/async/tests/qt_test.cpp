@@ -36,7 +36,7 @@
 
 
 #include <puffin/async.hpp>
-#include <puffin/async/qt.hpp>
+#include <puffin/async/adapter/qt.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <QCoreApplication>

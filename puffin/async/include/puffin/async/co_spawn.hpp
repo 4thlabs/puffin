@@ -80,6 +80,21 @@ public:
       : handle_(handle)
   {}
 
+  detached_task(detached_task&& rhs) noexcept
+      : handle_(std::exchange(rhs.handle_, nullptr))
+  {}
+
+  detached_task(const detached_task&) = delete;
+  detached_task& operator=(const detached_task&) = delete;
+  detached_task& operator=(detached_task&&) = delete;
+
+  // Once started, the frame destroys itself at its end
+  ~detached_task()
+  {
+    if (handle_)
+      handle_.destroy();
+  }
+
   /**
    * @brief Starts the coroutine on the executor, or inline when the executor is empty
    */
@@ -161,7 +176,8 @@ inline constexpr detached_t detached {};
  *
  * The completion is called on the executor once the task is done, with (std::exception_ptr) or
  * (std::exception_ptr, T). The task is started from a call posted to the executor (inline if the
- * executor is empty).
+ * executor is empty). The completion must not throw (std::terminate is called otherwise). With the
+ * default detached completion, exceptions escaping the task are silently discarded.
  */
 template<typename T, typename C = detached_t>
 void co_spawn(any_executor executor, async<T> task, C completion = {})

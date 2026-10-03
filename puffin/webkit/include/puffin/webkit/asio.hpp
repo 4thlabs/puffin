@@ -40,7 +40,7 @@
 // asio transport for puffin::webkit (target puffin::webkit_asio). Uses standalone asio by default,
 // Boost.Asio when PUFFIN_ASYNC_USE_BOOST_ASIO is defined, like puffin::async_asio.
 
-#include <puffin/async/asio.hpp>
+#include <puffin/async/adapter/asio.hpp>
 #include <puffin/webkit/transport/concepts.hpp>
 
 #if defined(PUFFIN_ASYNC_USE_BOOST_ASIO)

@@ -34,8 +34,8 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PUFFIN_ASYNC_QT_HPP
-#define PUFFIN_ASYNC_QT_HPP
+#ifndef PUFFIN_ASYNC_ADAPTER_QT_HPP
+#define PUFFIN_ASYNC_ADAPTER_QT_HPP
 
 // Qt 6 adapter for puffin::async
 
@@ -173,4 +173,4 @@ auto sleep_for(std::chrono::duration<Rep, Period> duration, QObject* context = Q
 }
 }
 
-#endif // PUFFIN_ASYNC_QT_HPP
+#endif // PUFFIN_ASYNC_ADAPTER_QT_HPP
