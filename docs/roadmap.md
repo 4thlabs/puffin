@@ -34,7 +34,7 @@
 ## Async
 
 - [x] Lazy `async<T>` task, executors, `co_spawn`, `sync_wait`
-- [x] `when_all`, `schedule_on`, `from_callback`
+- [x] `when_all`, `schedule_on`, `from_callback`, `try_await`
 - [x] asio adapter (standalone and Boost.Asio)
 - [x] Qt adapter
 - [ ] Awaitable concepts (`Awaitable`, `await_result_t`), today in `webkit/detail/awaitable.hpp`

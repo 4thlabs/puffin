@@ -86,6 +86,7 @@ whatever thread resumes it.
 | `co_spawn(executor, factory, completion)` | `co_spawn.hpp` | Same, the task is created by `factory()`, which is kept alive until the end. |
 | `sync_wait([executor,] task)` | `sync_wait.hpp` | Blocks the calling thread until the task is done, returns its value or rethrows. |
 | `when_all(tasks...)` / `when_all(std::vector<async<T>>)` | `when_all.hpp` | Runs tasks concurrently, returns a tuple (or a vector) of results. |
+| `try_await(task)` | `try_await.hpp` | Awaits a task and returns its value or exception (`outcome<T>`), to handle a failure with `co_await`. |
 | `schedule_on(executor)` | `schedule.hpp` | Awaitable moving the coroutine to another executor. |
 | `this_executor` | `schedule.hpp` | `any_executor ex = co_await this_executor;` |
 | `from_callback<Args...>(initiate)` | `from_callback.hpp` | Awaits any callback based operation. |
@@ -134,6 +135,24 @@ std::vector<int> sizes = co_await when_all(std::move(tasks));   // std::vector<a
   only run in parallel if they move to other executors.
 - `void` results become `std::monostate`.
 - If tasks fail, the first exception in argument order is rethrown once *all* of them are done.
+
+### `try_await`
+
+`co_await` is not allowed inside a `catch` block. When a failure must be handled by awaiting something (retry,
+reconnect, cleanup), capture the outcome first and branch outside of the handler:
+
+```c++
+auto first = co_await try_await(exchange(request));
+
+if (!first) {
+  co_await reconnect();
+  co_return co_await exchange(request);   // or first.rethrow()
+}
+
+co_return std::move(*first.value);
+```
+
+`void` tasks give an `outcome<std::monostate>`.
 
 ### `from_callback`
 

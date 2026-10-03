@@ -34,23 +34,22 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PUFFIN_WEBKIT_DETAIL_TRY_AWAIT_HPP
-#define PUFFIN_WEBKIT_DETAIL_TRY_AWAIT_HPP
+#ifndef PUFFIN_ASYNC_TRY_AWAIT_HPP
+#define PUFFIN_ASYNC_TRY_AWAIT_HPP
 
-#include <puffin/async.hpp>
+#include <puffin/async/async.hpp>
 
 #include <exception>
 #include <optional>
+#include <type_traits>
 #include <utility>
-
-// TODO: Move to puffin::async once its API is settled
+#include <variant>
 
 namespace puffin {
-namespace webkit {
-namespace detail {
+namespace async {
 
 /**
- * @brief The value of an awaited operation, or the exception it threw.
+ * @brief The value of an awaited task, or the exception it threw.
  *
  * co_await is not allowed in a catch block: a coroutine that must await something on failure (retry, cleanup)
  * captures the outcome with try_await() and branches on it outside of the handler.
@@ -65,19 +64,31 @@ struct outcome {
   [[noreturn]] void rethrow() const { std::rethrow_exception(error); }
 };
 
-/// Awaits an operation and returns its outcome instead of throwing
+/**
+ * @brief Awaits a task and returns its outcome instead of throwing. void results become std::monostate.
+ *
+ *   auto first = co_await try_await(fetch());
+ *   if (!first)
+ *     co_await reconnect();
+ */
 template<typename T>
-async::async<outcome<T>> try_await(async::async<T> operation)
+async<outcome<std::conditional_t<std::is_void_v<T>, std::monostate, T>>> try_await(async<T> task)
 {
+  using value_type = std::conditional_t<std::is_void_v<T>, std::monostate, T>;
+
   try {
-    co_return outcome<T>{co_await std::move(operation), nullptr};
+    if constexpr (std::is_void_v<T>) {
+      co_await std::move(task);
+      co_return outcome<value_type>{value_type{}, nullptr};
+    } else {
+      co_return outcome<value_type>{co_await std::move(task), nullptr};
+    }
   } catch (...) {
-    co_return outcome<T>{std::nullopt, std::current_exception()};
+    co_return outcome<value_type>{std::nullopt, std::current_exception()};
   }
 }
 
-} // namespace detail
-} // namespace webkit
+} // namespace async
 } // namespace puffin
 
-#endif // PUFFIN_WEBKIT_DETAIL_TRY_AWAIT_HPP
+#endif // PUFFIN_ASYNC_TRY_AWAIT_HPP

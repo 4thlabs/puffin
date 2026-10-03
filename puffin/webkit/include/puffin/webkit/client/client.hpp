@@ -38,7 +38,6 @@
 #define PUFFIN_WEBKIT_CLIENT_CLIENT_HPP
 
 #include <puffin/async.hpp>
-#include <puffin/webkit/detail/try_await.hpp>
 #include <puffin/webkit/http/errors.hpp>
 #include <puffin/webkit/http/parser.hpp>
 #include <puffin/webkit/http/serializer.hpp>
@@ -109,7 +108,7 @@ public:
     if (!stream_)
       stream_.emplace(co_await connector_.connect(host_, port_));
 
-    auto first = co_await detail::try_await(exchange(wire, head));
+    auto first = co_await async::try_await(exchange(wire, head));
 
     if (first)
       co_return std::move(*first.value);
