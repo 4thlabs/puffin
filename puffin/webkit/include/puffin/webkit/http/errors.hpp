@@ -38,6 +38,7 @@
 #define PUFFIN_WEBKIT_HTTP_ERRORS_HPP
 
 #include <puffin/webkit/http/parser.hpp>
+#include <puffin/webkit/http/status.hpp>
 
 #include <stdexcept>
 #include <string>
@@ -64,6 +65,17 @@ inline const char* to_string(parse_error e) noexcept
   }
 
   return "unknown";
+}
+
+/// The status a server answers with when a request can't be parsed
+inline status to_status(parse_error e) noexcept
+{
+  switch (e) {
+    case parse_error::header_too_large: return status::request_header_fields_too_large;
+    case parse_error::body_too_large: return status::payload_too_large;
+    case parse_error::uri_too_long: return status::uri_too_long;
+    default: return status::bad_request;
+  }
 }
 
 /**

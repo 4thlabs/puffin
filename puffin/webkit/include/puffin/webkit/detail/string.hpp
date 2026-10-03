@@ -41,6 +41,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace puffin {
 namespace webkit {
@@ -264,6 +265,23 @@ inline std::string percent_decode(std::string_view s)
     }
 
     out += s[i];
+  }
+
+  return out;
+}
+
+/**
+ * @brief Joins values with a separator: {"GET", "POST"} -> "GET, POST"
+ */
+inline std::string join(const std::vector<std::string>& values, std::string_view separator)
+{
+  std::string out;
+
+  for (const auto& value : values) {
+    if (!out.empty())
+      out += separator;
+
+    out += value;
   }
 
   return out;

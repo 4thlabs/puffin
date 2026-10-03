@@ -37,6 +37,7 @@
 #ifndef PUFFIN_WEBKIT_SERVER_ROUTER_HPP
 #define PUFFIN_WEBKIT_SERVER_ROUTER_HPP
 
+#include <algorithm>
 #include <regex>
 #include <string>
 #include <string_view>
@@ -64,7 +65,8 @@ public:
     /// Route parameters (capture groups)
     std::vector<std::string> params;
 
-    /// When the path matched but not the method: methods allowed for this path (for 405 and Allow)
+    /// When the path matched but not the method: methods allowed for this path, without duplicates (for 405 and
+    /// Allow)
     std::vector<std::string> allowed_methods;
 
     explicit operator bool() const { return handler != nullptr; }
@@ -74,12 +76,6 @@ public:
   {
     routes_.push_back({std::move(method), pattern, std::regex(pattern), std::move(handler)});
   }
-
-  void get(const std::string& pattern, handler_type handler) { add("GET", pattern, std::move(handler)); }
-  void post(const std::string& pattern, handler_type handler) { add("POST", pattern, std::move(handler)); }
-  void put(const std::string& pattern, handler_type handler) { add("PUT", pattern, std::move(handler)); }
-  void patch(const std::string& pattern, handler_type handler) { add("PATCH", pattern, std::move(handler)); }
-  void del(const std::string& pattern, handler_type handler) { add("DELETE", pattern, std::move(handler)); }
 
   /// Finds the handler for a request. HEAD falls back to GET when no HEAD route matches.
   match find(std::string_view method, std::string_view path) const
@@ -116,7 +112,7 @@ private:
         continue;
 
       if (r.method != method) {
-        m.allowed_methods.push_back(r.method);
+        add_unique(m.allowed_methods, r.method);
         continue;
       }
 
@@ -130,6 +126,12 @@ private:
     }
 
     return m;
+  }
+
+  static void add_unique(std::vector<std::string>& values, const std::string& value)
+  {
+    if (std::find(values.begin(), values.end(), value) == values.end())
+      values.push_back(value);
   }
 
 private:
