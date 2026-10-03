@@ -39,7 +39,7 @@
 
 #include "puffin/events/event_bus.hpp"
 
-using namespace pfn::events;
+using namespace puffin::events;
 
 using Catch::Matchers::EndsWith;
 using Catch::Matchers::ContainsSubstring;

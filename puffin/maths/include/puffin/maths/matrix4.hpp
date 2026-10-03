@@ -41,7 +41,7 @@
 #include <cstring>
 #include "precision.hpp"
 
-namespace pfn {
+namespace puffin::maths {
 
 template<typename T>
 class basic_matrix4 {

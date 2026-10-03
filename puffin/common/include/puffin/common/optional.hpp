@@ -40,7 +40,7 @@
 #include <puffin/common/none.hpp>
 #include <string>
 
-namespace pfn {
+namespace puffin::common {
 
 ///
 /// Optional type

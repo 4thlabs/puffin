@@ -43,7 +43,7 @@
 #include <puffin/common/none.hpp>
 #include <puffin/ioc/bind.hpp>
 
-namespace pfn {
+namespace puffin {
 namespace ioc {
 
 ///
@@ -59,7 +59,7 @@ public:
 
 public:
   basic_container() {
-    auto l = {none, set(Allocator<Objects>::allocate(
+    auto l = {common::none, set(Allocator<Objects>::allocate(
       resolve<typename dependencies<Objects>::type>(
         std::make_index_sequence<dependencies<Objects>::arity>()
       ), std::make_index_sequence<dependencies<Objects>::arity>())
@@ -74,21 +74,21 @@ public:
 
 private:
   template<typename C>
-  none_t set(C rhs)
+  common::none_t set(C rhs)
   {
     std::get<C>(objects_) = rhs;
-    return none;
+    return common::none;
   }
 
   template<typename Tuple, size_t... I, 
-           typename std::enable_if<std::is_same<Tuple, none_t>::value, int>::type = 0>
-  std::tuple<none_t> resolve(std::index_sequence<I...>)
+           typename std::enable_if<std::is_same<Tuple, common::none_t>::value, int>::type = 0>
+  std::tuple<common::none_t> resolve(std::index_sequence<I...>)
   {
-    return std::make_tuple(none);
+    return std::make_tuple(common::none);
   }
 
   template<typename Tuple, size_t... I, 
-           typename std::enable_if<!std::is_same<Tuple, none_t>::value, int>::type = 0>
+           typename std::enable_if<!std::is_same<Tuple, common::none_t>::value, int>::type = 0>
   Tuple resolve(std::index_sequence<I...>)
   {
     return std::make_tuple(std::get<std::tuple_element_t<I, Tuple>>(objects_)...);

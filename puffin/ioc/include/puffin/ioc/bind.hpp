@@ -40,7 +40,7 @@
 #include <puffin/ioc/allocator.hpp>
 #include <puffin/common/none.hpp>
 
-namespace pfn {
+namespace puffin {
 namespace ioc {
 
 template<template<typename> typename Allocator, typename... D>
@@ -52,7 +52,7 @@ struct basic_bind {
 template<>
 struct basic_bind<none_allocator> {
   static constexpr int arity = 0;
-  using type = none_t;
+  using type = common::none_t;
 };
 
 template<typename O>

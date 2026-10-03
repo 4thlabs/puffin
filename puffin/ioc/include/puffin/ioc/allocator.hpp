@@ -37,7 +37,7 @@
 #ifndef PFN_IOC_ALLOCATOR_HPP
 #define PFN_IOC_ALLOCATOR_HPP
 
-namespace pfn {
+namespace puffin {
 namespace ioc {
 
 ///
@@ -51,7 +51,7 @@ struct shared_ptr_allocator {
   /// Allocates object with the corresponding dependendies
   ///
   template<typename Tuple, size_t... I,
-           typename std::enable_if<!std::is_same<Tuple, std::tuple<none_t>>::value, int>::type = 0>
+           typename std::enable_if<!std::is_same<Tuple, std::tuple<common::none_t>>::value, int>::type = 0>
   static type allocate(Tuple&& t, std::index_sequence<I...>)
   {
     return std::make_shared<C>(std::get<I>(std::forward<Tuple>(t))...);
@@ -61,7 +61,7 @@ struct shared_ptr_allocator {
   /// Allocates objects without dependencies
   ///
   template<typename Tuple, size_t... I,
-           typename std::enable_if<std::is_same<Tuple, std::tuple<none_t>>::value, int>::type = 0>
+           typename std::enable_if<std::is_same<Tuple, std::tuple<common::none_t>>::value, int>::type = 0>
   static type allocate(Tuple&& t, std::index_sequence<I...>)
   {
     return std::make_shared<C>();

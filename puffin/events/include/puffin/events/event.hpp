@@ -38,7 +38,7 @@
 
 #include <functional>
 
-namespace pfn {
+namespace puffin {
 namespace events {
 
 template<typename... Events>

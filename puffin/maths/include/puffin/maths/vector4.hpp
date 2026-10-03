@@ -37,7 +37,7 @@
 #ifndef PFN_MATHS_VECTOR4
 #define PFN_MATHS_VECTOR4
 
-namespace pfn {
+namespace puffin::maths {
     
 }
 
