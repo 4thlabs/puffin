@@ -37,7 +37,10 @@
 #ifndef PUFFIN_RANGES_TO_VECTOR_HPP
 #define PUFFIN_RANGES_TO_VECTOR_HPP
 
+#include <algorithm>
+#include <iterator>
 #include <ranges>
+#include <vector>
 
 namespace puffin {
 namespace ranges {
@@ -57,7 +60,7 @@ struct to_vector_impl {
         res.reserve(std::ranges::size(r));
       }
 
-      res.insert(res.begin(), rc.begin(), rc.end());
+      std::copy(std::ranges::begin(rc), std::ranges::end(rc), std::back_inserter(res));
 
       return res;
     }

@@ -37,6 +37,9 @@
 #ifndef PFN_CALL_TRAITS_HPP
 #define PFN_CALL_TRAITS_HPP
 
+#include <cstddef>
+#include <cstdint>
+#include <string>
 #include <tuple>
 
 template<typename T>

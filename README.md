@@ -106,7 +106,7 @@ int main() {
 
 Adapters, built when their dependency is found:
 
-- `puffin::async_asio` (`<puffin/async/asio.hpp>`, standalone asio or Boost.Asio with
+- `puffin::async_asio` (`<puffin/async/adapter/asio.hpp>`, standalone asio or Boost.Asio with
   `PUFFIN_ASYNC_USE_BOOST_ASIO`): `asio::executor { io_context }`, the `asio::use_async` /
   `asio::use_async_tuple` completion tokens, `asio::sleep_for`.
 
@@ -114,7 +114,7 @@ Adapters, built when their dependency is found:
   std::size_t n = co_await socket.async_read_some(buffer, puffin::async::asio::use_async);
   ```
 
-- `puffin::async_qt` (`<puffin/async/qt.hpp>`, Qt 6): `qt::executor { context_object }`,
+- `puffin::async_qt` (`<puffin/async/adapter/qt.hpp>`, Qt 6): `qt::executor { context_object }`,
   `co_await qt::signal(sender, &Sender::signal)`, `qt::sleep_for`.
 
 ### Ioc

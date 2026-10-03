@@ -34,8 +34,8 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PUFFIN_ASYNC_ASIO_HPP
-#define PUFFIN_ASYNC_ASIO_HPP
+#ifndef PUFFIN_ASYNC_ADAPTER_ASIO_HPP
+#define PUFFIN_ASYNC_ADAPTER_ASIO_HPP
 
 // asio adapter for puffin::async. Uses standalone asio by default, define
 // PUFFIN_ASYNC_USE_BOOST_ASIO to use Boost.Asio instead.
@@ -239,4 +239,4 @@ async<void> sleep_for(executor ex, std::chrono::duration<Rep, Period> duration)
 }
 }
 
-#endif // PUFFIN_ASYNC_ASIO_HPP
+#endif // PUFFIN_ASYNC_ADAPTER_ASIO_HPP
