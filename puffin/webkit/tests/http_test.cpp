@@ -128,6 +128,25 @@ TEST_CASE("Header injection is rejected", "[webkit][http]")
   REQUIRE_THROWS_AS(request("GET", "/a b"), std::invalid_argument);
   REQUIRE_THROWS_AS(request("GET", "/a\r\nHost: evil"), std::invalid_argument);
   REQUIRE_THROWS_AS(request("GET", ""), std::invalid_argument);
+  REQUIRE_THROWS_AS(request("GET", "/a\tb"), std::invalid_argument);
+}
+
+TEST_CASE("Set-Cookie attribute injection is rejected", "[webkit][http]")
+{
+  REQUIRE(cookie("a", "b%20c").str() == "a=b%20c; Path=/");
+
+  REQUIRE_THROWS_AS(cookie("a", "b; Domain=evil.com").str(), std::invalid_argument);
+  REQUIRE_THROWS_AS(cookie("a", "b c").str(), std::invalid_argument);
+  REQUIRE_THROWS_AS(cookie("a=b", "c").str(), std::invalid_argument);
+  REQUIRE_THROWS_AS(cookie("", "c").str(), std::invalid_argument);
+
+  cookie c("a", "b");
+  c.path = "/; Domain=evil.com";
+  REQUIRE_THROWS_AS(c.str(), std::invalid_argument);
+
+  c.path = "/";
+  c.domain = "example.com; Secure";
+  REQUIRE_THROWS_AS(c.str(), std::invalid_argument);
 }
 
 TEST_CASE("Cookies", "[webkit][http]")

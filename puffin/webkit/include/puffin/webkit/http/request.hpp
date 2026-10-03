@@ -83,7 +83,7 @@ public:
   const std::string& target() const { return target_; }
   void target(std::string target)
   {
-    if (target.empty() || target.find(' ') != std::string::npos || !detail::is_field_value(target))
+    if (!detail::is_target(target))
       throw std::invalid_argument("invalid request target");
 
     target_ = std::move(target);

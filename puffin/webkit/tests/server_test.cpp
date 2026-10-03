@@ -155,7 +155,7 @@ TEST_CASE("Cookies and session middlewares", "[webkit][middleware]")
   using chain_type = middleware_chain<middlewares::cookies, middlewares::session>;
 
   middlewares::session::options opts;
-  opts.secret = "test-secret";
+  opts.secret = std::string(32, 'k');
   middlewares::session signer(opts);
   chain_type chain(middlewares::cookies{}, middlewares::session(opts));
 
@@ -190,8 +190,10 @@ TEST_CASE("Cookies and session middlewares", "[webkit][middleware]")
     auto set_cookies = res.headers().get_all("Set-Cookie");
     REQUIRE(set_cookies.size() == 2);
 
-    std::string expected = "puffin_session=" + signer.sign("role=guest&user%20name=bob") + ";";
-    REQUIRE(set_cookies[0].starts_with(expected));
+    REQUIRE(set_cookies[0].starts_with("puffin_session="));
+    auto value = std::string_view(set_cookies[0]).substr(15);
+    value = value.substr(0, value.find(';'));
+    REQUIRE(signer.verify(value) == "role=guest&user%20name=bob");
     REQUIRE(set_cookies[1] == "lang=fr; Path=/");
   }
 
@@ -214,7 +216,7 @@ TEST_CASE("Session cookies are signed", "[webkit][middleware]")
   using chain_type = middleware_chain<middlewares::session>;
 
   middlewares::session::options opts;
-  opts.secret = "test-secret";
+  opts.secret = std::string(32, 'k');
   middlewares::session signer(opts);
   chain_type chain(middlewares::session{opts});
 
@@ -235,14 +237,40 @@ TEST_CASE("Session cookies are signed", "[webkit][middleware]")
   {
     REQUIRE(session_of("role=admin").empty());
     REQUIRE(session_of("role=admin.").empty());
-    REQUIRE(session_of("role=root" + valid.substr(valid.find('.'))).empty());
+    REQUIRE(session_of("1.role=admin.").empty());
+
+    auto first = valid.find('.');
+    auto last = valid.rfind('.');
+    REQUIRE(session_of(valid.substr(0, first) + ".role=root" + valid.substr(last)).empty());
+    REQUIRE(session_of("9" + valid).empty());
     REQUIRE(session_of(valid + "x").empty());
+  }
+
+  SECTION("Expired cookies are ignored, even with a valid signature")
+  {
+    auto now = middlewares::session::clock::now();
+    auto expired = signer.sign("role=admin", now - std::chrono::seconds(1));
+    REQUIRE_FALSE(signer.verify(expired, now));
+    REQUIRE(session_of(expired).empty());
+    REQUIRE(signer.verify(signer.sign("role=admin", now + std::chrono::seconds(10)), now) == "role=admin");
+  }
+
+  SECTION("A value signed for another cookie name does not validate")
+  {
+    auto other_opts = opts;
+    other_opts.cookie_name = "other_session";
+    REQUIRE(session_of(middlewares::session(other_opts).sign("role=admin")).empty());
   }
 
   SECTION("Another key does not validate")
   {
-    middlewares::session other(middlewares::session::options{.secret = "other"});
+    middlewares::session other(middlewares::session::options{.secret = std::string(32, 'o')});
     REQUIRE(session_of(other.sign("role=admin")).empty());
+  }
+
+  SECTION("Short secrets are refused")
+  {
+    REQUIRE_THROWS_AS(middlewares::session(middlewares::session::options{.secret = "short"}), std::invalid_argument);
   }
 
   SECTION("Default instances get distinct random keys")

@@ -156,8 +156,11 @@ wk::response res = co_await client.get("/index.html");
   405, HEAD, keep-alive. Handlers get a `basic_context<Middlewares...>` that each middleware
   extends with its `data_type` (`ctx.cookies()`, `ctx.set_cookie()`, `ctx.session()`).
 - Middlewares define optional `before(ctx)` (returning `false` stops the request) and `after(ctx)`.
-- The session cookie is signed with HMAC-SHA256, set `session::options::secret` to keep sessions
-  across restarts and instances (a random key is used otherwise). Its content is readable by the client.
+- The session cookie is signed with HMAC-SHA256 together with its name and an expiry checked by the
+  server (`max_age` after the last change). Set `session::options::secret` (32 bytes or more) to keep
+  sessions across restarts and instances, a random key is used otherwise. Its content is readable by
+  the client. Cookie names, values, path and domain are validated when building `Set-Cookie`.
+- Routes match the raw path, percent-encoded characters are not decoded before matching.
 - Header names and values, methods, targets and reason phrases are validated: CR, LF and NUL throw
   `std::invalid_argument`. See [the roadmap](docs/roadmap.md) for what is missing.
 - `basic_client<Connector>`: one host, kept alive connection, idempotent requests retried once on

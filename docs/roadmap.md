@@ -48,19 +48,20 @@
 - [x] Router with parameters, 405 + Allow, HEAD falls back to GET
 - [x] Typed context extended by middlewares
 - [x] Cookies middleware
-- [x] Session middleware, signed with HMAC-SHA256
+- [x] Session middleware, signed with HMAC-SHA256, expiry checked by the server
+- [x] Set-Cookie validation (no attribute injection)
 - [x] Coroutine server and client on `puffin::async`
 - [x] asio adapter, TCP and TLS (OpenSSL)
 - [x] Qt adapter, TCP
 - [ ] Read, idle and request timeouts
 - [ ] Connection limit
 - [ ] Accept retry with backoff on resource errors (EMFILE)
-- [ ] Error callback for failed connections
+- [ ] Error callback for failed connections, handler exceptions and oversized sessions
 - [ ] Percent-decoded route parameters
 - [ ] HEAD in Allow, automatic OPTIONS
 - [ ] `Expect: 100-continue`
 - [ ] Document server and acceptor lifetime
-- [ ] Session expiry inside the signed payload
+- [ ] Session key from the OS (`getrandom`, `BCryptGenRandom`) instead of `std::random_device`
 - [ ] Async middlewares
 - [ ] Concurrent client requests (connection pool)
 - [ ] Qt TLS (QSslSocket)

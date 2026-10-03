@@ -158,6 +158,7 @@ TEST_CASE("Request parser", "[webkit][parser]")
     REQUIRE(fails_with("GET / HTTP/1.1\r\nX: a\rb\r\n\r\n", parse_error::bad_header));
     REQUIRE(fails_with(std::string_view("GET / HTTP/1.1\r\nX: a\0b\r\n\r\n", 26), parse_error::bad_header));
     REQUIRE(fails_with("GET /a\rb HTTP/1.1\r\n\r\n", parse_error::bad_start_line));
+    REQUIRE(fails_with("GET /a\tb HTTP/1.1\r\n\r\n", parse_error::bad_start_line));
   }
 
   SECTION("Too long target is a 414")

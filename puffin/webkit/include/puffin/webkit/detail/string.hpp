@@ -127,6 +127,39 @@ inline constexpr bool is_field_value(std::string_view s) noexcept
   return true;
 }
 
+/**
+ * @brief True if s can be sent as a request target: not empty, no space and no control character
+ */
+inline constexpr bool is_target(std::string_view s) noexcept
+{
+  if (s.empty())
+    return false;
+
+  for (char c : s) {
+    auto u = static_cast<unsigned char>(c);
+
+    if (u <= 0x20 || u == 0x7F)
+      return false;
+  }
+
+  return true;
+}
+
+/**
+ * @brief RFC 6265 cookie-octet: printable US-ASCII but space, '"', ',', ';' and backslash
+ */
+inline constexpr bool is_cookie_value(std::string_view s) noexcept
+{
+  for (char c : s) {
+    auto u = static_cast<unsigned char>(c);
+
+    if (u <= 0x20 || u >= 0x7F || c == '"' || c == ',' || c == ';' || c == '\\')
+      return false;
+  }
+
+  return true;
+}
+
 inline constexpr int hex_value(char c) noexcept
 {
   if (c >= '0' && c <= '9')

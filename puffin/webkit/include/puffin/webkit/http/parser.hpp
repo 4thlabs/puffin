@@ -298,8 +298,7 @@ private:
       auto target = line->substr(sp1 + 1, sp2 - sp1 - 1);
       auto v = parse_version(line->substr(sp2 + 1));
 
-      if (!detail::is_token(method) || target.empty() || target.find(' ') != std::string_view::npos ||
-          !detail::is_field_value(target))
+      if (!detail::is_token(method) || !detail::is_target(target))
         return fail(parse_error::bad_start_line);
 
       if (target.size() > limits_.max_target_size)

@@ -60,12 +60,17 @@ namespace middlewares {
  * Adds ctx.session() to the context, a map of strings restored from the request cookie and written back to the
  * response when modified. An emptied session expires the cookie.
  *
- * The cookie is signed with HMAC-SHA256 (payload.signature), a cookie with a missing or wrong signature is ignored
- * and the request starts with an empty session. The content is not encrypted: the client can read it, not change it.
+ * The cookie value is expiry.payload.signature, signed with HMAC-SHA256 over the cookie name, the expiry (unix time)
+ * and the payload. A cookie with a missing or wrong signature, expired, or sent under another name is ignored and the
+ * request starts with an empty session. The expiry is set max_age after the last modification of the session.
+ * The content is not encrypted: the client can read it, not change it.
  */
 class session {
 public:
   using session_map = std::map<std::string, std::string, std::less<>>;
+  using clock = std::chrono::system_clock;
+
+  static constexpr std::size_t min_secret_size = 32;
 
   struct options {
     std::string cookie_name = "puffin_session";
@@ -74,8 +79,9 @@ public:
     bool secure = false;
     bool http_only = true;
 
-    /// Signing key. When empty a random key is generated, sessions are then lost on restart and not shared
-    /// between server instances.
+    /// Signing key, at least 32 bytes. When empty a random key is generated with std::random_device, sessions are
+    /// then lost on restart and not shared between server instances. Set it on toolchains where std::random_device
+    /// is deterministic (some older MinGW).
     std::string secret;
 
     /// Largest cookie value accepted or produced, a bigger session makes the response fail with a 500
@@ -103,6 +109,8 @@ public:
   {
     if (options_.secret.empty())
       options_.secret = random_secret();
+    else if (options_.secret.size() < min_secret_size)
+      throw std::invalid_argument("session secret must be at least 32 bytes");
   }
 
   template<typename Context>
@@ -184,33 +192,50 @@ public:
     return s;
   }
 
-  /// payload.base64url(hmac)
-  std::string sign(std::string_view payload) const
+  /// Signed cookie value expiring max_age from now
+  std::string sign(std::string_view payload) const { return sign(payload, clock::now() + options_.max_age); }
+
+  /// expiry.payload.base64url(hmac(name.expiry.payload))
+  std::string sign(std::string_view payload, clock::time_point expires) const
   {
-    return std::string(payload) + "." + detail::base64url_encode(detail::hmac_sha256(options_.secret, payload));
+    auto expiry = std::to_string(std::chrono::duration_cast<std::chrono::seconds>(expires.time_since_epoch()).count());
+    auto data = expiry + "." + std::string(payload);
+    return data + "." + mac(data);
   }
 
-  /// The payload of a signed value, nullopt if the signature does not match
-  std::optional<std::string_view> verify(std::string_view value) const
+  /// The payload of a signed value, nullopt if the signature does not match or the value expired
+  std::optional<std::string_view> verify(std::string_view value, clock::time_point now = clock::now()) const
   {
     if (value.size() > options_.max_cookie_size)
       return std::nullopt;
 
-    auto dot = value.rfind('.');
+    auto first = value.find('.');
+    auto last = value.rfind('.');
 
-    if (dot == std::string_view::npos)
+    if (first == std::string_view::npos || first == last)
       return std::nullopt;
 
-    auto payload = value.substr(0, dot);
-    auto expected = detail::base64url_encode(detail::hmac_sha256(options_.secret, payload));
+    auto data = value.substr(0, last);
 
-    if (!detail::constant_time_equal(value.substr(dot + 1), expected))
+    if (!detail::constant_time_equal(value.substr(last + 1), mac(data)))
       return std::nullopt;
 
-    return payload;
+    auto expiry = detail::parse_decimal(value.substr(0, first));
+    auto seconds = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
+
+    if (!expiry || seconds < 0 || *expiry <= static_cast<std::size_t>(seconds))
+      return std::nullopt;
+
+    return value.substr(first + 1, last - first - 1);
   }
 
 private:
+  /// The cookie name is part of the signed data, a value can't be replayed under another cookie name
+  std::string mac(std::string_view data) const
+  {
+    return detail::base64url_encode(detail::hmac_sha256(options_.secret, options_.cookie_name + "." + std::string(data)));
+  }
+
   static std::string random_secret()
   {
     std::random_device rd;
