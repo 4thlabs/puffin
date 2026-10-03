@@ -146,6 +146,27 @@ TEST_CASE("Request parser", "[webkit][parser]")
     REQUIRE(fails_with("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nabc\r\n", parse_error::bad_chunk));
   }
 
+  SECTION("Bare LF, lone CR and NUL are rejected in requests")
+  {
+    auto fails_with = [](std::string_view raw, parse_error e) {
+      request_parser parser;
+      return parser.feed(raw).status == parse_status::error && parser.error() == e;
+    };
+
+    REQUIRE(fails_with("GET / HTTP/1.1\nHost: a\r\n\r\n", parse_error::bad_line_ending));
+    REQUIRE(fails_with("GET / HTTP/1.1\r\nHost: a\n\r\n", parse_error::bad_line_ending));
+    REQUIRE(fails_with("GET / HTTP/1.1\r\nX: a\rb\r\n\r\n", parse_error::bad_header));
+    REQUIRE(fails_with(std::string_view("GET / HTTP/1.1\r\nX: a\0b\r\n\r\n", 26), parse_error::bad_header));
+    REQUIRE(fails_with("GET /a\rb HTTP/1.1\r\n\r\n", parse_error::bad_start_line));
+  }
+
+  SECTION("Too long target is a 414")
+  {
+    request_parser parser;
+    REQUIRE(parser.feed("GET /" + std::string(4096, 'a') + " HTTP/1.1\r\n\r\n").status == parse_status::error);
+    REQUIRE(parser.error() == parse_error::uri_too_long);
+  }
+
   SECTION("Limits")
   {
     request_parser small({.max_header_size = 64, .max_body_size = 4});
@@ -191,6 +212,15 @@ TEST_CASE("Response parser", "[webkit][parser]")
     REQUIRE(p.message().status_code() == 404);
     REQUIRE(p.message().reason() == "Not Found");
     REQUIRE(p.message().body() == "nope");
+  }
+
+  SECTION("Control characters in the reason or a header are rejected")
+  {
+    REQUIRE(p.feed("HTTP/1.1 200 O\rK\r\n\r\n").status == parse_status::error);
+
+    response_parser q;
+    REQUIRE(q.feed(std::string_view("HTTP/1.1 200 OK\r\nX: a\0b\r\n\r\n", 27)).status == parse_status::error);
+    REQUIRE(q.error() == parse_error::bad_header);
   }
 
   SECTION("Empty reason phrase")

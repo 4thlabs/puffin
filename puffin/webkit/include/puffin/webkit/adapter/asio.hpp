@@ -34,8 +34,8 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PUFFIN_WEBKIT_ASIO_HPP
-#define PUFFIN_WEBKIT_ASIO_HPP
+#ifndef PUFFIN_WEBKIT_ADAPTER_ASIO_HPP
+#define PUFFIN_WEBKIT_ADAPTER_ASIO_HPP
 
 // asio transport for puffin::webkit (target puffin::webkit_asio). Uses standalone asio by default,
 // Boost.Asio when PUFFIN_ASYNC_USE_BOOST_ASIO is defined, like puffin::async_asio.
@@ -204,4 +204,4 @@ static_assert(Connector<tcp_connector>);
 } // namespace webkit
 } // namespace puffin
 
-#endif // PUFFIN_WEBKIT_ASIO_HPP
+#endif // PUFFIN_WEBKIT_ADAPTER_ASIO_HPP

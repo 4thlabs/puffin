@@ -319,6 +319,7 @@ private:
     switch (e) {
       case parse_error::header_too_large: return response(status::request_header_fields_too_large);
       case parse_error::body_too_large: return response(status::payload_too_large);
+      case parse_error::uri_too_long: return response(status::uri_too_long);
       default: return response(status::bad_request);
     }
   }

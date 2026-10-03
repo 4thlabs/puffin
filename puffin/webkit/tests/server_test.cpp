@@ -42,6 +42,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <functional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -152,10 +153,14 @@ TEST_CASE("Middleware chain", "[webkit][middleware]")
 TEST_CASE("Cookies and session middlewares", "[webkit][middleware]")
 {
   using chain_type = middleware_chain<middlewares::cookies, middlewares::session>;
-  chain_type chain;
+
+  middlewares::session::options opts;
+  opts.secret = "test-secret";
+  middlewares::session signer(opts);
+  chain_type chain(middlewares::cookies{}, middlewares::session(opts));
 
   request req("GET", "/");
-  req.headers().add("Cookie", "theme=dark; puffin_session=user%20name=bob&role=admin");
+  req.headers().add("Cookie", "theme=dark; puffin_session=" + signer.sign("user%20name=bob&role=admin"));
   response res;
 
   chain_type::context_type ctx(req, res);
@@ -176,7 +181,7 @@ TEST_CASE("Cookies and session middlewares", "[webkit][middleware]")
     REQUIRE(res.headers().get_all("Set-Cookie").empty());
   }
 
-  SECTION("Set cookies and modified session are sent back")
+  SECTION("Set cookies and modified session are sent back signed")
   {
     ctx.set_cookie(cookie{"lang", "fr"});
     ctx.session()["role"] = "guest";
@@ -184,7 +189,9 @@ TEST_CASE("Cookies and session middlewares", "[webkit][middleware]")
 
     auto set_cookies = res.headers().get_all("Set-Cookie");
     REQUIRE(set_cookies.size() == 2);
-    REQUIRE(set_cookies[0].starts_with("puffin_session=role=guest&user%20name=bob;"));
+
+    std::string expected = "puffin_session=" + signer.sign("role=guest&user%20name=bob") + ";";
+    REQUIRE(set_cookies[0].starts_with(expected));
     REQUIRE(set_cookies[1] == "lang=fr; Path=/");
   }
 
@@ -193,5 +200,53 @@ TEST_CASE("Cookies and session middlewares", "[webkit][middleware]")
     ctx.session().clear();
     chain.after(ctx, entered);
     REQUIRE(res.headers().get("Set-Cookie")->find("Max-Age=0") != std::string_view::npos);
+  }
+
+  SECTION("Oversized session fails instead of producing a cookie browsers drop")
+  {
+    ctx.session()["big"] = std::string(5000, 'x');
+    REQUIRE_THROWS_AS(chain.after(ctx, entered), std::length_error);
+  }
+}
+
+TEST_CASE("Session cookies are signed", "[webkit][middleware]")
+{
+  using chain_type = middleware_chain<middlewares::session>;
+
+  middlewares::session::options opts;
+  opts.secret = "test-secret";
+  middlewares::session signer(opts);
+  chain_type chain(middlewares::session{opts});
+
+  auto session_of = [&](std::string cookie) {
+    request req("GET", "/");
+    req.headers().add("Cookie", "puffin_session=" + cookie);
+    response res;
+    chain_type::context_type ctx(req, res);
+    std::size_t entered;
+    chain.before(ctx, entered);
+    return ctx.session();
+  };
+
+  auto valid = signer.sign("role=admin");
+  REQUIRE(session_of(valid).at("role") == "admin");
+
+  SECTION("Unsigned, forged or tampered cookies are ignored")
+  {
+    REQUIRE(session_of("role=admin").empty());
+    REQUIRE(session_of("role=admin.").empty());
+    REQUIRE(session_of("role=root" + valid.substr(valid.find('.'))).empty());
+    REQUIRE(session_of(valid + "x").empty());
+  }
+
+  SECTION("Another key does not validate")
+  {
+    middlewares::session other(middlewares::session::options{.secret = "other"});
+    REQUIRE(session_of(other.sign("role=admin")).empty());
+  }
+
+  SECTION("Default instances get distinct random keys")
+  {
+    REQUIRE(middlewares::session().sign("a") != middlewares::session().sign("a"));
   }
 }

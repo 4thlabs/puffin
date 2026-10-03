@@ -39,7 +39,10 @@
 #include <puffin/webkit/http/request.hpp>
 #include <puffin/webkit/http/response.hpp>
 #include <puffin/webkit/http/serializer.hpp>
+#include <puffin/webkit/detail/crypto.hpp>
 #include <catch2/catch_test_macros.hpp>
+
+#include <stdexcept>
 
 using namespace puffin::webkit;
 
@@ -70,6 +73,61 @@ TEST_CASE("Headers", "[webkit][http]")
     REQUIRE(h.has_token("connection", "upgrade"));
     REQUIRE_FALSE(h.has_token("connection", "close"));
   }
+}
+
+TEST_CASE("SHA-256 and HMAC-SHA256", "[webkit][http]")
+{
+  auto hex = [](const detail::sha256_digest& d) {
+    static constexpr char digits[] = "0123456789abcdef";
+    std::string out;
+    for (auto b : d) {
+      out += digits[b >> 4];
+      out += digits[b & 0x0F];
+    }
+    return out;
+  };
+
+  REQUIRE(hex(detail::sha256::hash("")) == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+  REQUIRE(hex(detail::sha256::hash("abc")) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+  REQUIRE(hex(detail::sha256::hash("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq")) ==
+          "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1");
+  REQUIRE(hex(detail::sha256::hash(std::string(1000000, 'a'))) ==
+          "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0");
+
+  // RFC 4231 test cases 2 and 6 (key longer than the block size)
+  REQUIRE(hex(detail::hmac_sha256("Jefe", "what do ya want for nothing?")) ==
+          "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843");
+  REQUIRE(hex(detail::hmac_sha256(std::string(131, '\xaa'), "Test Using Larger Than Block-Size Key - Hash Key First")) ==
+          "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54");
+
+  REQUIRE(detail::base64url_encode(std::string_view("\xfb\xff", 2)) == "-_8");
+  REQUIRE(detail::base64url_encode(std::string_view("foobar")) == "Zm9vYmFy");
+  REQUIRE(detail::base64url_encode(std::string_view("fooba")) == "Zm9vYmE");
+  REQUIRE(detail::base64url_encode(std::string_view("f")) == "Zg");
+}
+
+TEST_CASE("Header injection is rejected", "[webkit][http]")
+{
+  headers h;
+
+  REQUIRE_THROWS_AS(h.add("X", "a\r\nSet-Cookie: evil=1"), std::invalid_argument);
+  REQUIRE_THROWS_AS(h.set("X", "a\nb"), std::invalid_argument);
+  REQUIRE_THROWS_AS(h.add("X", std::string("a\0b", 3)), std::invalid_argument);
+  REQUIRE_THROWS_AS(h.add("Bad Name", "a"), std::invalid_argument);
+  REQUIRE_THROWS_AS(h.add("X:Y", "a"), std::invalid_argument);
+  REQUIRE(h.empty());
+
+  h.add("X", "tab\tand obs-text \xE9");
+  REQUIRE(h.get("X") == "tab\tand obs-text \xE9");
+
+  response res;
+  REQUIRE_THROWS_AS(res.status(200, "OK\r\nX: y"), std::invalid_argument);
+  REQUIRE_THROWS_AS(res.status(42, "Nope"), std::invalid_argument);
+
+  REQUIRE_THROWS_AS(request("GET\r\n", "/"), std::invalid_argument);
+  REQUIRE_THROWS_AS(request("GET", "/a b"), std::invalid_argument);
+  REQUIRE_THROWS_AS(request("GET", "/a\r\nHost: evil"), std::invalid_argument);
+  REQUIRE_THROWS_AS(request("GET", ""), std::invalid_argument);
 }
 
 TEST_CASE("Cookies", "[webkit][http]")

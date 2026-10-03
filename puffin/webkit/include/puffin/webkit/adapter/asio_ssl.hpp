@@ -34,12 +34,12 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PUFFIN_WEBKIT_ASIO_SSL_HPP
-#define PUFFIN_WEBKIT_ASIO_SSL_HPP
+#ifndef PUFFIN_WEBKIT_ADAPTER_ASIO_SSL_HPP
+#define PUFFIN_WEBKIT_ADAPTER_ASIO_SSL_HPP
 
 // TLS transport for puffin::webkit over asio and OpenSSL (target puffin::webkit_asio_ssl)
 
-#include <puffin/webkit/asio.hpp>
+#include <puffin/webkit/adapter/asio.hpp>
 
 #if defined(PUFFIN_ASYNC_USE_BOOST_ASIO)
 #include <boost/asio/ssl.hpp>
@@ -198,4 +198,4 @@ static_assert(Connector<tls_connector>);
 } // namespace webkit
 } // namespace puffin
 
-#endif // PUFFIN_WEBKIT_ASIO_SSL_HPP
+#endif // PUFFIN_WEBKIT_ADAPTER_ASIO_SSL_HPP

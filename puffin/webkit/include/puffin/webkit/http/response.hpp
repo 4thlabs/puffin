@@ -41,6 +41,7 @@
 #include <puffin/webkit/http/status.hpp>
 #include <puffin/webkit/http/version.hpp>
 
+#include <stdexcept>
 #include <string>
 
 namespace puffin {
@@ -66,8 +67,12 @@ public:
 
   void status(int code) { status(code, std::string(reason_phrase(code))); }
 
+  /// Throws std::invalid_argument if the code is not 3 digits or the reason contains CR, LF, NUL or other controls
   void status(int code, std::string reason)
   {
+    if (code < 100 || code > 999 || !detail::is_field_value(reason))
+      throw std::invalid_argument("invalid response status");
+
     status_ = code;
     reason_ = std::move(reason);
   }

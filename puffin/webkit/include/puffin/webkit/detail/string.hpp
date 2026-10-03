@@ -81,6 +81,52 @@ inline constexpr std::string_view trim(std::string_view s) noexcept
   return s;
 }
 
+inline constexpr bool is_token_char(char c) noexcept
+{
+  if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))
+    return true;
+
+  switch (c) {
+    case '!': case '#': case '$': case '%': case '&': case '\'': case '*': case '+':
+    case '-': case '.': case '^': case '_': case '`': case '|': case '~':
+      return true;
+    default:
+      return false;
+  }
+}
+
+/**
+ * @brief RFC 9110 token, used for methods and header names
+ */
+inline constexpr bool is_token(std::string_view s) noexcept
+{
+  if (s.empty())
+    return false;
+
+  for (char c : s) {
+    if (!is_token_char(c))
+      return false;
+  }
+
+  return true;
+}
+
+/**
+ * @brief True if s can be sent as a header value or reason phrase: no control character but HTAB
+ *        (so no CR, LF or NUL, which would allow response splitting)
+ */
+inline constexpr bool is_field_value(std::string_view s) noexcept
+{
+  for (char c : s) {
+    auto u = static_cast<unsigned char>(c);
+
+    if ((u < 0x20 && c != '\t') || u == 0x7F)
+      return false;
+  }
+
+  return true;
+}
+
 inline constexpr int hex_value(char c) noexcept
 {
   if (c >= '0' && c <= '9')

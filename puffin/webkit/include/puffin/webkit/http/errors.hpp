@@ -50,6 +50,8 @@ inline const char* to_string(parse_error e) noexcept
   switch (e) {
     case parse_error::none: return "none";
     case parse_error::bad_start_line: return "bad start line";
+    case parse_error::bad_line_ending: return "bad line ending";
+    case parse_error::uri_too_long: return "uri too long";
     case parse_error::bad_version: return "bad version";
     case parse_error::bad_status_code: return "bad status code";
     case parse_error::bad_header: return "bad header";
