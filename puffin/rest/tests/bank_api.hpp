@@ -70,8 +70,8 @@ namespace rest = puffin::rest;
 namespace auth {
 using namespace puffin::rest;
 
-struct login : endpoint<POST, "/login", body<credentials>, returns<token>> {};
-struct me : endpoint<GET, "/me", security<bearer_auth>, returns<user>> {};
+using login = endpoint<POST, "/login", body<credentials>, returns<token>>;
+using me = endpoint<GET, "/me", security<bearer_auth>, returns<user>>;
 
 using api = rest::api<"/auth", login, me>;
 } // namespace auth
@@ -79,11 +79,11 @@ using api = rest::api<"/auth", login, me>;
 namespace users {
 using namespace puffin::rest;
 
-struct list : endpoint<GET, "/", query<"limit", std::optional<int>>, query<"name", std::optional<std::string>>,
-                       returns<std::vector<user>>> {};
-struct get : endpoint<GET, "/{id:int}", returns<user>> {};
-struct create : endpoint<POST, "/", body<new_user>, returns<user, status::created>> {};
-struct remove : endpoint<DELETE, "/{id:int}"> {};
+using list = endpoint<GET, "/", query<"limit", std::optional<int>>, query<"name", std::optional<std::string>>,
+                     returns<std::vector<user>>>;
+using get = endpoint<GET, "/{id:int}", returns<user>>;
+using create = endpoint<POST, "/", body<new_user>, returns<user, status::created>>;
+using remove = endpoint<DELETE, "/{id:int}">;
 
 using api = rest::api<"/users", list, get, create, remove>;
 } // namespace users
@@ -91,9 +91,9 @@ using api = rest::api<"/users", list, get, create, remove>;
 namespace cards {
 using namespace puffin::rest;
 
-struct list : endpoint<GET, "/", query<"status", std::optional<card_status>>, returns<std::vector<card>>> {};
-struct issue : endpoint<POST, "/", body<new_card>, returns<card, status::created>> {};
-struct freeze : endpoint<POST, "/{card_id:int}/freeze", returns<card>> {};
+using list = endpoint<GET, "/", query<"status", std::optional<card_status>>, returns<std::vector<card>>>;
+using issue = endpoint<POST, "/", body<new_card>, returns<card, status::created>>;
+using freeze = endpoint<POST, "/{card_id:int}/freeze", returns<card>>;
 
 using api = rest::api<"/users/{user_id:int}/cards", list, issue, freeze>;
 } // namespace cards

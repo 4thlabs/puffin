@@ -76,10 +76,10 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(new_note, text, tags)
 namespace notes {
 using namespace puffin::rest;
 
-struct list : endpoint<GET, "/", query<"tag", std::optional<std::string>>, returns<std::vector<note>>> {};
-struct get : endpoint<GET, "/{id:int}", returns<note>> {};
-struct create : endpoint<POST, "/", body<new_note>, returns<note, status::created>> {};
-struct remove : endpoint<DELETE, "/{id:int}"> {};
+using list = endpoint<GET, "/", query<"tag", std::optional<std::string>>, returns<std::vector<note>>>;
+using get = endpoint<GET, "/{id:int}", returns<note>>;
+using create = endpoint<POST, "/", body<new_note>, returns<note, status::created>>;
+using remove = endpoint<DELETE, "/{id:int}">;
 
 using api = rest::api<"/notes", list, get, create, remove>;
 } // namespace notes
@@ -87,7 +87,7 @@ using api = rest::api<"/notes", list, get, create, remove>;
 namespace health {
 using namespace puffin::rest;
 
-struct ping : endpoint<GET, "/ping", returns<std::string>> {};
+using ping = endpoint<GET, "/ping", returns<std::string>>;
 
 using api = rest::api<"/health", ping>;
 } // namespace health

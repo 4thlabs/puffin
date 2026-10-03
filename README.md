@@ -182,10 +182,10 @@ namespace rest = puffin::rest;
 namespace users {
 using namespace puffin::rest;
 
-struct list   : endpoint<GET,    "/",         query<"limit", std::optional<int>>, returns<std::vector<user>>> {};
-struct get    : endpoint<GET,    "/{id:int}", returns<user>> {};
-struct create : endpoint<POST,   "/",         body<new_user>, returns<user, status::created>> {};
-struct remove : endpoint<DELETE, "/{id:int}"> {}; // 204
+using list   = endpoint<GET,    "/",         query<"limit", std::optional<int>>, returns<std::vector<user>>>;
+using get    = endpoint<GET,    "/{id:int}", returns<user>>;
+using create = endpoint<POST,   "/",         body<new_user>, returns<user, status::created>>;
+using remove = endpoint<DELETE, "/{id:int}">; // 204
 
 using api = rest::api<"/users", list, get, create, remove>;
 }
@@ -221,6 +221,8 @@ rest::result<user> r = co_await api.try_call<users::get>(7); // errors as values
 
 - Path parameters `{name:type}`: `int`, `int64`, `uint`, `uint64`, `double`, `bool`, `string`
   (default), `path` (rest of the path). Parsed at compile time.
+- Endpoints are identified by their type: two with the same method, path and parts in one api are
+  rejected at compile time, `name<"users.remove">` tells them apart (and names them for interceptors).
 - Parts: `query<"name", T>` (`optional<T>`, `vector<T>`), `header<"Name", T>`, `body<T, Codec>`,
   `returns<T, status, Codec>`, `security<api_key<"Header">, api_key_query<"param">, bearer_auth>`.
 - Arguments, server and client alike: path parameters, the endpoint parts in order, then the parts

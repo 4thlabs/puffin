@@ -33,6 +33,51 @@ static_assert(bank::v1::endpoints::size == 9);
 static_assert(rest::path_template<"/files/{p:path}">::param_count == 1);
 static_assert(rest::path_template<"/a/{x}/{y:bool}">::param_name(1) == "y");
 
+namespace named {
+using namespace puffin::rest;
+
+// Same shape: the same type, unless named
+static_assert(std::is_same_v<endpoint<DELETE, "/{id:int}">, endpoint<DELETE, "/{id:int}">>);
+
+using remove_user = endpoint<DELETE, "/{id:int}", name<"users.remove">>;
+using remove_card = endpoint<DELETE, "/{id:int}", name<"cards.remove">>;
+static_assert(!std::is_same_v<remove_user, remove_card>);
+
+using api = rest::api<"", rest::api<"/users", remove_user>, rest::api<"/cards", remove_card>>;
+static_assert(call_info<find_endpoint_t<api, remove_card>>::name == "cards.remove");
+static_assert(call_info<find_endpoint_t<bank::v1, bank::users::get>>::name.empty());
+
+using unnamed = endpoint<DELETE, "/{id:int}">;
+using ambiguous = rest::api<"", rest::api<"/users", unnamed>, rest::api<"/cards", unnamed>>;
+static_assert(ambiguous::count<unnamed> == 2);
+
+struct users_service {
+  std::vector<int>* removed;
+  void operator()(remove_user, int id) { removed->push_back(id); }
+};
+
+struct cards_service {
+  std::vector<int>* removed;
+  void operator()(remove_card, int id) { removed->push_back(-id); }
+};
+} // namespace named
+
+TEST_CASE("Named endpoints", "[rest]")
+{
+  std::vector<int> removed;
+  wk::basic_server<> server;
+  rest::mount<named::api>(server, named::users_service {&removed}, named::cards_service {&removed});
+
+  rest::client<named::api, rest::local_transport<wk::basic_server<>>> api(server);
+
+  pa::sync_wait([&]() -> pa::async<void> {
+    co_await api.call<named::remove_user>(1);
+    co_await api.call<named::remove_card>(2);
+  }());
+
+  REQUIRE(removed == std::vector<int> {1, -2});
+}
+
 TEST_CASE("Path templates", "[rest]")
 {
   using t = rest::path_template<"/users/{id:int}/files/{name}/{rest:path}">;

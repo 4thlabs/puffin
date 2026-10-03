@@ -140,6 +140,18 @@ struct returns : detail::part_tag {
   using codec = C;
 };
 
+/**
+ * @brief Names an endpoint: shown to interceptors (call_info::name) and needed to tell apart two endpoints
+ *        with the same shape, which would otherwise be the same type:
+ *
+ *   using remove_user = endpoint<DELETE, "/{id:int}", name<"users.remove">>;
+ *   using remove_card = endpoint<DELETE, "/{id:int}", name<"cards.remove">>;
+ */
+template<fixed_string Name>
+struct name : detail::part_tag {
+  static constexpr auto value = Name;
+};
+
 //
 // Security schemes, checked by the server validators and filled by the client interceptors. They are not
 // part of the handler and call signatures.
@@ -194,6 +206,12 @@ template<typename T, typename C>
 struct is_body<body<T, C>> : std::true_type {};
 
 template<typename T>
+struct is_name : std::false_type {};
+
+template<fixed_string N>
+struct is_name<name<N>> : std::true_type {};
+
+template<typename T>
 struct is_security : std::false_type {};
 
 template<typename... S>
@@ -226,11 +244,12 @@ struct first_or<typelist<T, Ts...>, Default> {
 
 /**
  * @brief An endpoint: method, path template relative to its api, and parts (query, header, body, returns,
- *        security).
+ *        security, name).
  *
- * Derive from it rather than aliasing it, so that two endpoints with the same shape stay distinct types:
+ *   using get_user = endpoint<GET, "/users/{id:int}", returns<user>>;
  *
- *   struct get_user : endpoint<GET, "/users/{id:int}", returns<user>> {};
+ * The endpoint type is its identity (service dispatch, client::call): two endpoints with the same shape in one
+ * api are rejected at compile time, give them a name<> to tell them apart.
  */
 template<http_method M, fixed_string Path, typename... Parts>
 struct endpoint : detail::endpoint_tag {
@@ -239,6 +258,7 @@ struct endpoint : detail::endpoint_tag {
   static_assert(detail::filter_t<detail::is_body, detail::typelist<Parts...>>::size <= 1, "more than one body<>");
   static_assert(detail::filter_t<detail::is_returns, detail::typelist<Parts...>>::size <= 1,
                 "more than one returns<>");
+  static_assert(detail::filter_t<detail::is_name, detail::typelist<Parts...>>::size <= 1, "more than one name<>");
 
   static constexpr http_method method = M;
   static constexpr auto path = Path;
@@ -253,6 +273,7 @@ struct with : detail::with_tag {
 
   static_assert(detail::filter_t<detail::is_returns, parts>::size == 0, "returns<> cannot be shared with with<>");
   static_assert(detail::filter_t<detail::is_body, parts>::size == 0, "body<> cannot be shared with with<>");
+  static_assert(detail::filter_t<detail::is_name, parts>::size == 0, "name<> cannot be shared with with<>");
 };
 
 /// A path parameter, the I-th of the full path of an endpoint
@@ -280,6 +301,10 @@ struct resolved {
   using parts = detail::concat_t<typename E::parts, Inherited>;
   using returns = typename detail::first_or<detail::filter_t<detail::is_returns, typename E::parts>, rest::returns<>>::type;
   using result_type = typename returns::value_type;
+
+  /// The name<> of the endpoint, empty if it has none
+  static constexpr std::string_view name =
+      detail::first_or<detail::filter_t<detail::is_name, typename E::parts>, rest::name<"">>::type::value.view();
   using schemes = typename detail::schemes_of<detail::filter_t<detail::is_security, parts>>::type;
 
 private:
@@ -355,7 +380,9 @@ struct api : detail::api_tag {
 template<typename Api, typename E>
 struct find_endpoint {
   static_assert(Api::template count<E> != 0, "this endpoint is not part of the api");
-  static_assert(Api::template count<E> < 2, "this endpoint appears several times in the api");
+  static_assert(Api::template count<E> < 2,
+                "this endpoint appears several times in the api: endpoints with the same method, path and parts "
+                "are the same type, add a name<\"...\"> to tell them apart");
 
   using type = detail::at_t<0, detail::filter_t<detail::is_resolved_for<E>::template pred, typename Api::endpoints>>;
 };
@@ -375,6 +402,7 @@ struct call_info {
   static constexpr http_method method = R::method;
   static constexpr std::string_view method_name = rest::method_name(R::method);
   static constexpr std::string_view path_template = R::path.view();
+  static constexpr std::string_view name = R::name;
 
   template<typename Scheme>
   static constexpr bool requires_scheme = detail::contains_v<Scheme, schemes>;
