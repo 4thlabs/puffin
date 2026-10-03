@@ -34,79 +34,74 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PUFFIN_WEBKIT_HTTP_RESPONSE_HPP
-#define PUFFIN_WEBKIT_HTTP_RESPONSE_HPP
+#ifndef PUFFIN_WEBKIT_MIDDLEWARES_COOKIES_HPP
+#define PUFFIN_WEBKIT_MIDDLEWARES_COOKIES_HPP
 
-#include <puffin/webkit/http/headers.hpp>
-#include <puffin/webkit/http/status.hpp>
-#include <puffin/webkit/http/version.hpp>
+#include <puffin/webkit/http/cookie.hpp>
 
-#include <string>
+#include <optional>
+#include <string_view>
+#include <vector>
 
 namespace puffin {
 namespace webkit {
+namespace middlewares {
 
 /**
- * @brief An HTTP response message, used by both the client and the server
+ * @brief Parses the request cookies and emits the cookies set by the handler.
+ *
+ * Adds to the context: ctx.cookies(), ctx.cookie(name) and ctx.set_cookie(cookie).
  */
-class response {
+class cookies {
 public:
-  response() = default;
+  class data_type {
+  public:
+    /// Cookies sent by the client
+    const cookie_map& cookies() const { return received_; }
 
-  explicit response(webkit::status s, std::string body = {})
-      : status_(static_cast<int>(s)), reason_(reason_phrase(s)), body_(std::move(body))
-  {}
+    std::optional<std::string_view> cookie(std::string_view name) const
+    {
+      auto it = received_.find(name);
 
-  int status_code() const { return status_; }
+      if (it == received_.end())
+        return std::nullopt;
 
-  const std::string& reason() const { return reason_; }
+      return std::string_view(it->second);
+    }
 
-  /// Sets the status code, with its standard reason phrase
-  void status(webkit::status s) { status(static_cast<int>(s)); }
+    /// Sends a cookie to the client with the response
+    void set_cookie(webkit::cookie c) { sent_.push_back(std::move(c)); }
 
-  void status(int code) { status(code, std::string(reason_phrase(code))); }
+  private:
+    friend class middlewares::cookies;
 
-  void status(int code, std::string reason)
+    cookie_map received_;
+    std::vector<webkit::cookie> sent_;
+  };
+
+  template<typename Context>
+  void before(Context& ctx)
   {
-    status_ = code;
-    reason_ = std::move(reason);
+    auto& data = ctx.template data<cookies>();
+
+    for (auto value : ctx.request().headers().get_all("Cookie")) {
+      for (auto& [name, v] : parse_cookie_header(value))
+        data.received_.emplace(name, std::move(v));
+    }
   }
 
-  const webkit::version& version() const { return version_; }
-  void version(webkit::version v) { version_ = v; }
-
-  const webkit::headers& headers() const { return headers_; }
-  webkit::headers& headers() { return headers_; }
-
-  const std::string& body() const { return body_; }
-  std::string& body() { return body_; }
-  void body(std::string body) { body_ = std::move(body); }
-
-  /// Sets the body and its Content-Type
-  void body(std::string body, std::string content_type)
+  template<typename Context>
+  void after(Context& ctx)
   {
-    body_ = std::move(body);
-    headers_.set("Content-Type", std::move(content_type));
+    auto& data = ctx.template data<cookies>();
+
+    for (const auto& c : data.sent_)
+      ctx.response().headers().add("Set-Cookie", c.str());
   }
-
-  /// True if the connection should be kept open after this response
-  bool keep_alive() const
-  {
-    if (headers_.has_token("Connection", "close"))
-      return false;
-
-    return version_ >= http_1_1 || headers_.has_token("Connection", "keep-alive");
-  }
-
-private:
-  int status_ = 200;
-  std::string reason_ = "OK";
-  webkit::version version_;
-  webkit::headers headers_;
-  std::string body_;
 };
 
+} // namespace middlewares
 } // namespace webkit
 } // namespace puffin
 
-#endif // PUFFIN_WEBKIT_HTTP_RESPONSE_HPP
+#endif // PUFFIN_WEBKIT_MIDDLEWARES_COOKIES_HPP

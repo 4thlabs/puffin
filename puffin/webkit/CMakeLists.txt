@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.5)
 
-file(GLOB_RECURSE HEADERS include/**/*.hpp)
+file(GLOB_RECURSE HEADERS include/*.hpp)
 
 puffin_declare_module(
   NAME
@@ -13,5 +13,13 @@ puffin_declare_module(
     cxx_std_20
 )
 
-puffin_declare_tests(SOURCES tests/http_test.cpp DEPS puffin::webkit)
-puffin_declare_tests(SOURCES tests/uri_test.cpp DEPS puffin::webkit)
+puffin_declare_tests(
+  SOURCES
+    tests/uri_test.cpp
+    tests/http_test.cpp
+    tests/parser_test.cpp
+    tests/server_test.cpp
+    tests/transport_test.cpp
+  DEPS
+    puffin::webkit
+)

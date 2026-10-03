@@ -1,12 +1,12 @@
-//  ____         __  __ _       
-// |  _ \ _   _ / _|/ _(_)_ __  
-// | |_) | | | | |_| |_| | '_  | 
+//  ____         __  __ _
+// |  _ \ _   _ / _|/ _(_)_ __
+// | |_) | | | | |_| |_| | '_  |
 // |  __/| |_| |  _|  _| | | | |
-// |_|    \__,_|_| |_| |_|_| |_|          
+// |_|    \__,_|_| |_| |_|_| |_|
 //
 // BSD 3-Clause License
 
-// Copyright (c) 2019, Thomas Gourgues (thomas.gourgues@gmail.com)
+// Copyright (c) 2025, Thomas Gourgues (thomas.gourgues@gmail.com)
 // All rights reserved.
 
 // Redistribution and use in source and binary forms, with or without
@@ -34,69 +34,110 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PUFFIN_WEBKIT_COOKIE_HPP
-#define PUFFIN_WEBKIT_COOKIE_HPP
+#ifndef PUFFIN_WEBKIT_HTTP_COOKIE_HPP
+#define PUFFIN_WEBKIT_HTTP_COOKIE_HPP
 
+#include <puffin/webkit/detail/string.hpp>
+
+#include <chrono>
 #include <map>
+#include <optional>
+#include <string>
+#include <string_view>
 
 namespace puffin {
 namespace webkit {
 
 /**
- * @brief The basic_cookie class
+ * @brief A cookie sent by the server through a Set-Cookie header
  */
-template<typename CharT>
-class basic_cookie {
-public:
-  using String = std::basic_string<CharT>;
+struct cookie {
+  enum class same_site_policy { strict, lax, none };
 
-  basic_cookie()
-    : path_("/"), max_age_(3600), secure_(false), http_only_(false)
+  cookie() = default;
+
+  cookie(std::string name, std::string value)
+      : name(std::move(name)), value(std::move(value))
   {}
 
-  basic_cookie(const String& name, const String& value)
-    : basic_cookie() {
-    name_ = name;
-    value_ = value;
+  std::string name;
+  std::string value;
+
+  std::string path = "/";
+  std::optional<std::string> domain;
+  std::optional<std::chrono::seconds> max_age;
+  std::optional<same_site_policy> same_site;
+  bool secure = false;
+  bool http_only = false;
+
+  /// Value of the Set-Cookie header for this cookie
+  std::string str() const
+  {
+    std::string s = name + "=" + value;
+
+    if (!path.empty())
+      s += "; Path=" + path;
+
+    if (domain)
+      s += "; Domain=" + *domain;
+
+    if (max_age)
+      s += "; Max-Age=" + std::to_string(max_age->count());
+
+    if (same_site) {
+      switch (*same_site) {
+        case same_site_policy::strict: s += "; SameSite=Strict"; break;
+        case same_site_policy::lax: s += "; SameSite=Lax"; break;
+        case same_site_policy::none: s += "; SameSite=None"; break;
+      }
+    }
+
+    if (secure)
+      s += "; Secure";
+
+    if (http_only)
+      s += "; HttpOnly";
+
+    return s;
   }
-
-  basic_cookie(const basic_cookie& c)
-    : basic_cookie() {
-    name_ = c.name_;
-    value_ = c.value_;
-  }
-
-  basic_cookie(basic_cookie&& c) = default;
-  basic_cookie& operator=(basic_cookie&& c) = default;
-
-  const String& name() const {
-    return name_;
-  }
-
-  const String& value() const {
-    return value_;
-  }
-
-  /// Return a string corresponding to the cookie name=value; path:/ etc
-  String str() {
-    return name_ + "=" + value_ + "; ";
-  }
-
-private:
-
-  String     name_;
-  String     value_;
-  String     path_;
-  size_t     max_age_;
-  bool       secure_;
-  bool       http_only_;
-
-  std::optional<String>     domain_;
 };
 
-using cookie = basic_cookie<char>;
+using cookie_map = std::map<std::string, std::string, std::less<>>;
+
+/**
+ * @brief Parses the value of a Cookie request header (name1=value1; name2=value2)
+ *
+ * When a name appears several times, the first occurrence is kept (the most specific path, per RFC 6265).
+ */
+inline cookie_map parse_cookie_header(std::string_view value)
+{
+  cookie_map cookies;
+
+  while (!value.empty()) {
+    auto semicolon = value.find(';');
+    auto pair = detail::trim(value.substr(0, semicolon));
+    auto equal = pair.find('=');
+
+    if (equal != std::string_view::npos && equal > 0) {
+      auto name = detail::trim(pair.substr(0, equal));
+      auto val = detail::trim(pair.substr(equal + 1));
+
+      if (val.size() >= 2 && val.front() == '"' && val.back() == '"')
+        val = val.substr(1, val.size() - 2);
+
+      cookies.emplace(std::string(name), std::string(val));
+    }
+
+    if (semicolon == std::string_view::npos)
+      break;
+
+    value.remove_prefix(semicolon + 1);
+  }
+
+  return cookies;
+}
 
 } // namespace webkit
 } // namespace puffin
 
-#endif // PUFFIN_WEBKIT_COOKIE_HPP
+#endif // PUFFIN_WEBKIT_HTTP_COOKIE_HPP

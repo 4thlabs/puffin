@@ -1,12 +1,12 @@
-//  ____         __  __ _       
-// |  _ \ _   _ / _|/ _(_)_ __  
-// | |_) | | | | |_| |_| | '_  | 
+//  ____         __  __ _
+// |  _ \ _   _ / _|/ _(_)_ __
+// | |_) | | | | |_| |_| | '_  |
 // |  __/| |_| |  _|  _| | | | |
-// |_|    \__,_|_| |_| |_|_| |_|          
+// |_|    \__,_|_| |_| |_|_| |_|
 //
 // BSD 3-Clause License
 
-// Copyright (c) 2019, Thomas Gourgues (thomas.gourgues@gmail.com)
+// Copyright (c) 2025, Thomas Gourgues (thomas.gourgues@gmail.com)
 // All rights reserved.
 
 // Redistribution and use in source and binary forms, with or without
@@ -34,145 +34,95 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PFN_WEBKIT_REQUEST_HPP
-#define PFN_WEBKIT_REQUEST_HPP
+#ifndef PUFFIN_WEBKIT_HTTP_REQUEST_HPP
+#define PUFFIN_WEBKIT_HTTP_REQUEST_HPP
 
-#include "puffin/webkit/helpers/macros.hpp"
-#include "puffin/webkit/http/header.hpp"
-#include "puffin/webkit/http/cookie.hpp"
-#include "puffin/webkit/http/status_code.hpp"
-#include "puffin/webkit/http/session/session_base.hpp"
-#include "puffin/webkit/http/session/session_traits.hpp"
-#include "puffin/webkit/uri/uri.hpp"
+#include <puffin/webkit/http/headers.hpp>
+#include <puffin/webkit/http/version.hpp>
+#include <puffin/webkit/uri/uri.hpp>
 
-#include <vector>
-#include <unordered_map>
 #include <string>
-#include <ostream>
+#include <string_view>
 
+namespace puffin {
+namespace webkit {
 
-namespace pfn {
-
-template<typename Tag>
-class basic_request : public optional_session_base<Tag, basic_request<Tag>> {
+/**
+ * @brief An HTTP request message, used by both the client and the server
+ */
+class request {
 public:
-  using header_iterator = std::unordered_map<std::string, header>::iterator;
-  using header_map = std::unordered_map<std::string, header>;
-  using cookie_map = std::unordered_map<std::string, cookie>;
+  request() = default;
 
-  basic_request() {}
-
-  basic_request(const std::string& method, const uri& uri)
-    : method_(method), uri_(uri)
+  request(std::string method, std::string target)
+      : method_(std::move(method)), target_(std::move(target))
   {}
 
-  virtual ~basic_request() {}
-
-  void add_header(const std::string& name, const std::string& value) {
-    headers_.insert(std::make_pair(name, header(name, value)));
+  /// Builds a request for an absolute uri, the Host header is filled from it
+  template<typename P>
+  request(std::string method, const basic_uri<P>& uri)
+      : method_(std::move(method)), target_(uri.target())
+  {
+    headers_.set("Host", uri.has_explicit_port() ? uri.host() + ":" + std::to_string(uri.port()) : uri.host());
   }
 
-  const header_iterator find_header(const std::string& name) {
-    return headers_.find(name);
+  const std::string& method() const { return method_; }
+  void method(std::string method) { method_ = std::move(method); }
+
+  /// The request target as sent on the request line (path?query)
+  const std::string& target() const { return target_; }
+  void target(std::string target) { target_ = std::move(target); }
+
+  /// The path part of the target, without query
+  std::string_view path() const
+  {
+    std::string_view t = target_;
+    return t.substr(0, t.find_first_of("?#"));
   }
 
-  const header_iterator headers_end() {
-    return headers_.end();
+  /// The raw query string of the target, without '?'
+  std::string_view query_string() const
+  {
+    std::string_view t = target_;
+    auto q = t.find('?');
+
+    if (q == std::string_view::npos)
+      return {};
+
+    t.remove_prefix(q + 1);
+    return t.substr(0, t.find('#'));
   }
 
-  const header_map& headers() const {
-    return headers_;
-  }
+  query_map query() const { return parse_query(query_string()); }
 
-  void add_cookie(cookie&& c) {
-    cookies_.insert(std::make_pair(c.name(), std::move(c)));
-  }
+  const webkit::version& version() const { return version_; }
+  void version(webkit::version v) { version_ = v; }
 
-  const cookie_map& cookies() const {
-    return cookies_;
-  }
+  const webkit::headers& headers() const { return headers_; }
+  webkit::headers& headers() { return headers_; }
 
-  void method(const std::string& method) {
-    method_ = method;
-  }
+  const std::string& body() const { return body_; }
+  std::string& body() { return body_; }
+  void body(std::string body) { body_ = std::move(body); }
 
-  const std::string& method() const {
-    return method_;
-  }
+  /// True if the connection should be kept open after this request
+  bool keep_alive() const
+  {
+    if (headers_.has_token("Connection", "close"))
+      return false;
 
-  void path(const std::string& path) {
-    path_ = path;
+    return version_ >= http_1_1 || headers_.has_token("Connection", "keep-alive");
   }
-
-  const std::string& path() const {
-    return path_;
-  }
-
-  const uri& uri() const {
-    return uri_;
-  }
-
-  void body(const std::string& body) {
-    body_ = body;
-    headers_["Content-Length"] = header("Content-Length", std::to_string(body_.size()));
-  }
-
-  void add_parameter(const std::string& param) {
-    parameters_.push_back(param);
-  }
-
-  const std::vector<std::string>& parameters() const {
-    return parameters_;
-  }
-
-  template<typename T>
-  friend std::ostream& operator<<(std::ostream& o, const basic_request<T>& request);
 
 private:
-  header_map headers_;
-  cookie_map cookies_;
-
-  std::string         method_;
-  std::string         path_;
-  std::string         body_;
-
-  restpp::uri         uri_;
-
-  std::vector<std::string> parameters_; // Path parameters
+  std::string method_ = "GET";
+  std::string target_ = "/";
+  webkit::version version_;
+  webkit::headers headers_;
+  std::string body_;
 };
 
-template<typename Tag>
-inline std::ostream& operator<<(std::ostream& o, const basic_request<Tag>& request) {
-  o << request.method_ << " " << request.uri_.path() << " HTTP/1.1\r\n";
-  o << "Host: " << request.uri_.host() << "\r\n";
+} // namespace webkit
+} // namespace puffin
 
-  for (auto& h : request.headers_) {
-    o << h.second;
-  }
-
-  o << "\r\n";
-
-  return o;
-}
-
-template<typename Tag>
-struct is_request : std::false_type {};
-
-template<typename Tag>
-struct is_request<basic_request<Tag>> : std::true_type {};
-
-RESTPP_EXTERN template class basic_request<tag::server>;
-RESTPP_EXTERN template class basic_request<tag::client>;
-
-using request = basic_request<tag::server>;
-
-namespace client {
-  using request = basic_request<tag::client>;
-}
-
-
-}
-
-
-
-#endif // PFN_WEBKIT_REQUEST_HPP
+#endif // PUFFIN_WEBKIT_HTTP_REQUEST_HPP
