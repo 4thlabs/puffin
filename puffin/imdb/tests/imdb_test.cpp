@@ -206,6 +206,7 @@ TEST_CASE("imbd") {
     });
 
     REQUIRE_THROWS(db.row("doc_index_uuid", "5"));
+    REQUIRE_THROWS(db.row("doc_index_uui", "2"));
 
     auto& value = db.row("doc_index_uuid", "2");
 
