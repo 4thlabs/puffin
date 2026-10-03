@@ -123,13 +123,13 @@ TEST_CASE("Message reader", "[webkit][reader]")
   {
     stream.p->input = "GET /first HTTP/1.1\r\nHost: a\r\n\r\nGET /second HTTP/1.1\r\nHost: a\r\n\r\n";
 
-    REQUIRE(read() == parse_status::done);
+    REQUIRE(read() == read_status::done);
     REQUIRE(parser.release().target() == "/first");
 
-    REQUIRE(read() == parse_status::done);
+    REQUIRE(read() == read_status::done);
     REQUIRE(parser.release().target() == "/second");
 
-    REQUIRE(read() == parse_status::need_more);
+    REQUIRE(read() == read_status::end_of_stream);
     REQUIRE(parser.idle());
   }
 
@@ -137,7 +137,7 @@ TEST_CASE("Message reader", "[webkit][reader]")
   {
     stream.p->input = "GET /first HTTP/1.1\r\n";
 
-    REQUIRE(read() == parse_status::need_more);
+    REQUIRE(read() == read_status::end_of_stream);
     REQUIRE_FALSE(parser.idle());
   }
 
@@ -145,19 +145,19 @@ TEST_CASE("Message reader", "[webkit][reader]")
   {
     stream.p->input = "NOT HTTP\r\n\r\n";
 
-    REQUIRE(read() == parse_status::error);
+    REQUIRE(read() == read_status::error);
   }
 
   SECTION("clear() drops the bytes kept for the next message")
   {
     stream.p->input = "GET /first HTTP/1.1\r\n\r\nGET /second HTTP/1.1\r\n\r\n";
 
-    REQUIRE(read() == parse_status::done);
+    REQUIRE(read() == read_status::done);
     parser.reset();
     reader.clear();
     stream.p->input.clear();
 
-    REQUIRE(read() == parse_status::need_more);
+    REQUIRE(read() == read_status::end_of_stream);
     REQUIRE(parser.idle());
   }
 }

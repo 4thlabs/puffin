@@ -41,7 +41,6 @@
 
 #include <exception>
 #include <optional>
-#include <type_traits>
 #include <utility>
 
 // TODO: Move to puffin::async once its API is settled
@@ -59,18 +58,9 @@ namespace detail {
 template<typename T>
 struct outcome {
   std::optional<T> value;
-  std::exception_ptr error;
+  std::exception_ptr error; ///< Set when there is no value
 
-  explicit operator bool() const noexcept { return !error; }
-
-  [[noreturn]] void rethrow() const { std::rethrow_exception(error); }
-};
-
-template<>
-struct outcome<void> {
-  std::exception_ptr error;
-
-  explicit operator bool() const noexcept { return !error; }
+  explicit operator bool() const noexcept { return value.has_value(); }
 
   [[noreturn]] void rethrow() const { std::rethrow_exception(error); }
 };
@@ -80,14 +70,9 @@ template<typename T>
 async::async<outcome<T>> try_await(async::async<T> operation)
 {
   try {
-    if constexpr (std::is_void_v<T>) {
-      co_await std::move(operation);
-      co_return outcome<void>{};
-    } else {
-      co_return outcome<T>{co_await std::move(operation), nullptr};
-    }
+    co_return outcome<T>{co_await std::move(operation), nullptr};
   } catch (...) {
-    co_return outcome<T>{.error = std::current_exception()};
+    co_return outcome<T>{std::nullopt, std::current_exception()};
   }
 }
 

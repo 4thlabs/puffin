@@ -72,4 +72,4 @@
 ## Tooling
 
 - [x] clang-tidy in CI (function size and complexity) on async and webkit
-- [ ] Self-contained headers in common, events, ioc, imdb and maths, then check them with clang-tidy too
+- [ ] Self-contained headers in every module (CMake `VERIFY_INTERFACE_HEADER_SETS`), then let clang-tidy use the CMake compile commands instead of its own flags

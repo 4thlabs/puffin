@@ -65,8 +65,7 @@ public:
     /// Route parameters (capture groups)
     std::vector<std::string> params;
 
-    /// When the path matched but not the method: methods allowed for this path, without duplicates (for 405 and
-    /// Allow)
+    /// When the path matched but not the method: the methods allowed for it, once each (405 and Allow)
     std::vector<std::string> allowed_methods;
 
     explicit operator bool() const { return handler != nullptr; }

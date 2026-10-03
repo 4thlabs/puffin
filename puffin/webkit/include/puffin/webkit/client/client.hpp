@@ -122,14 +122,12 @@ public:
     // The server may have closed the kept alive connection meanwhile, retrying on a new one
     stream_.emplace(co_await connector_.connect(host_, port_));
 
-    auto retry = co_await detail::try_await(exchange(wire, head));
-
-    if (!retry) {
+    try {
+      co_return co_await exchange(wire, head);
+    } catch (...) {
       close();
-      retry.rethrow();
+      throw;
     }
-
-    co_return std::move(*retry.value);
   }
 
   async::async<response> get(std::string target) { return request(webkit::request("GET", std::move(target))); }
@@ -218,17 +216,16 @@ private:
   {
     for (;;) {
       parser.skip_body(head);
-      parse_status status = co_await reader_.read(*stream_, parser);
-      const bool closed = status == parse_status::need_more;
+      const bool closed = co_await reader_.read(*stream_, parser) == read_status::end_of_stream;
 
       if (closed) {
         if (parser.idle())
           throw connection_closed();
 
-        status = parser.finish();
+        parser.finish();
       }
 
-      if (status == parse_status::error)
+      if (parser.status() == parse_status::error)
         throw protocol_error(parser.error());
 
       if (closed || !is_interim(parser.message().status_code()))

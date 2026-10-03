@@ -49,6 +49,12 @@
 namespace puffin {
 namespace webkit {
 
+enum class read_status {
+  done,         ///< The message is complete
+  error,        ///< The message is invalid, see the parser error
+  end_of_stream ///< The stream ended first, the parser is left as is: finish() it or drop the message
+};
+
 /**
  * @brief Reads HTTP messages from a stream into a parser.
  *
@@ -61,13 +67,9 @@ public:
       : buffer_(buffer_size)
   {}
 
-  /**
-   * @brief Feeds the parser until its message is complete or invalid.
-   * @return done or error, or need_more if the stream ended first. On end of stream the parser is left as is,
-   *         the caller decides between finish() and dropping the message.
-   */
+  /// Feeds the parser until its message is complete or invalid, or the stream ends
   template<Stream S, typename Parser>
-  async::async<parse_status> read(S& stream, Parser& parser)
+  async::async<read_status> read(S& stream, Parser& parser)
   {
     for (;;) {
       if (begin_ != end_) {
@@ -75,14 +77,14 @@ public:
         begin_ += result.consumed;
 
         if (result.status != parse_status::need_more)
-          co_return result.status;
+          co_return result.status == parse_status::done ? read_status::done : read_status::error;
       }
 
       begin_ = 0;
       end_ = co_await stream.read_some(std::span<char>(buffer_));
 
       if (end_ == 0)
-        co_return parse_status::need_more;
+        co_return read_status::end_of_stream;
     }
   }
 

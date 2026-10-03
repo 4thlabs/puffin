@@ -111,14 +111,14 @@ private:
   /// Reads, handles and answers one request. Returns false once the connection must be closed.
   async::async<bool> serve_one()
   {
-    const parse_status status = co_await reader_.read(stream_, parser_);
+    const read_status status = co_await reader_.read(stream_, parser_);
 
-    if (status == parse_status::need_more) // Closed by the client
+    if (status == read_status::end_of_stream)
       co_return false;
 
     reply r;
 
-    if (status == parse_status::error)
+    if (status == read_status::error)
       r = reject(parser_.error());
     else
       r = co_await respond(parser_.release());
