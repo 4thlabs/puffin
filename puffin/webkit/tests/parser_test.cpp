@@ -158,6 +158,20 @@ TEST_CASE("Request parser", "[webkit][parser]")
     REQUIRE(small.error() == parse_error::body_too_large);
   }
 
+  SECTION("Chunk size overflow can't bypass the body limit")
+  {
+    auto r = p.feed("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n1\r\na\r\nffffffffffffffff\r\n");
+    REQUIRE(r.status == parse_status::error);
+    REQUIRE(p.error() == parse_error::body_too_large);
+  }
+
+  SECTION("Chunk size line length is capped, even when complete")
+  {
+    auto r = p.feed("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n1;" + std::string(8192, 'x') + "\r\n");
+    REQUIRE(r.status == parse_status::error);
+    REQUIRE(p.error() == parse_error::bad_chunk);
+  }
+
   SECTION("Unexpected end of stream")
   {
     p.feed("POST / HTTP/1.1\r\nContent-Length: 5\r\n\r\nab");

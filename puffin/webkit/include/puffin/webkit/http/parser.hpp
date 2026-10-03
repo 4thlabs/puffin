@@ -232,6 +232,11 @@ private:
       return std::nullopt;
     }
 
+    if (!counts_in_header && lf > max_chunk_line_size) {
+      fail(parse_error::bad_chunk);
+      return std::nullopt;
+    }
+
     pos_ += lf + 1;
 
     if (counts_in_header) {
@@ -493,7 +498,8 @@ private:
       return true;
     }
 
-    if (message_.body().size() + *size > limits_.max_body_size)
+    // body size never exceeds the limit, so this can't overflow unlike body size + chunk size
+    if (*size > limits_.max_body_size - message_.body().size())
       return fail(parse_error::body_too_large);
 
     remaining_ = *size;
@@ -542,7 +548,7 @@ private:
 
   bool parse_body_until_eof()
   {
-    if (message_.body().size() + (buffer_.size() - pos_) > limits_.max_body_size)
+    if (buffer_.size() - pos_ > limits_.max_body_size - message_.body().size())
       return fail(parse_error::body_too_large);
 
     take(buffer_.size() - pos_);
