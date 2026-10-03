@@ -124,7 +124,8 @@ public:
 private:
   static constexpr std::uint32_t rotr(std::uint32_t x, int n) noexcept { return (x >> n) | (x << (32 - n)); }
 
-  void transform()
+  // The SHA-256 compression function, kept in one piece to follow FIPS 180-4
+  void transform() // NOLINT(readability-function-size)
   {
     static constexpr std::uint32_t k[64] = {
       0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,

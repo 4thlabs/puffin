@@ -34,17 +34,61 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PUFFIN_ASYNC_HPP
-#define PUFFIN_ASYNC_HPP
+#ifndef PUFFIN_ASYNC_TRY_AWAIT_HPP
+#define PUFFIN_ASYNC_TRY_AWAIT_HPP
 
 #include <puffin/async/async.hpp>
-#include <puffin/async/co_spawn.hpp>
-#include <puffin/async/executor.hpp>
-#include <puffin/async/from_callback.hpp>
-#include <puffin/async/impl/thread_executor.hpp>
-#include <puffin/async/schedule.hpp>
-#include <puffin/async/sync_wait.hpp>
-#include <puffin/async/try_await.hpp>
-#include <puffin/async/when_all.hpp>
 
-#endif // PUFFIN_ASYNC_HPP
+#include <exception>
+#include <optional>
+#include <type_traits>
+#include <utility>
+#include <variant>
+
+namespace puffin {
+namespace async {
+
+/**
+ * @brief The value of an awaited task, or the exception it threw.
+ *
+ * co_await is not allowed in a catch block: a coroutine that must await something on failure (retry, cleanup)
+ * captures the outcome with try_await() and branches on it outside of the handler.
+ */
+template<typename T>
+struct outcome {
+  std::optional<T> value;
+  std::exception_ptr error; ///< Set when there is no value
+
+  explicit operator bool() const noexcept { return value.has_value(); }
+
+  [[noreturn]] void rethrow() const { std::rethrow_exception(error); }
+};
+
+/**
+ * @brief Awaits a task and returns its outcome instead of throwing. void results become std::monostate.
+ *
+ *   auto first = co_await try_await(fetch());
+ *   if (!first)
+ *     co_await reconnect();
+ */
+template<typename T>
+async<outcome<std::conditional_t<std::is_void_v<T>, std::monostate, T>>> try_await(async<T> task)
+{
+  using value_type = std::conditional_t<std::is_void_v<T>, std::monostate, T>;
+
+  try {
+    if constexpr (std::is_void_v<T>) {
+      co_await std::move(task);
+      co_return outcome<value_type>{value_type{}, nullptr};
+    } else {
+      co_return outcome<value_type>{co_await std::move(task), nullptr};
+    }
+  } catch (...) {
+    co_return outcome<value_type>{std::nullopt, std::current_exception()};
+  }
+}
+
+} // namespace async
+} // namespace puffin
+
+#endif // PUFFIN_ASYNC_TRY_AWAIT_HPP

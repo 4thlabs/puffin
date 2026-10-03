@@ -42,16 +42,15 @@
 #include <puffin/webkit/http/parser.hpp>
 #include <puffin/webkit/http/serializer.hpp>
 #include <puffin/webkit/transport/concepts.hpp>
+#include <puffin/webkit/transport/reader.hpp>
 #include <puffin/webkit/uri/uri.hpp>
 
 #include <cstdint>
-#include <exception>
 #include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
 #include <utility>
-#include <vector>
 
 namespace puffin {
 namespace webkit {
@@ -99,21 +98,8 @@ public:
   /// Sends a request and returns its response. Host and Connection headers are filled if missing.
   async::async<response> request(webkit::request req)
   {
-    if (busy_)
-      throw std::logic_error("basic_client handles one request at a time");
-
-    busy_ = true;
-
-    struct reset_busy {
-      bool& busy;
-      ~reset_busy() { busy = false; }
-    } guard{busy_};
-
-    if (!req.headers().contains("Host"))
-      req.headers().set("Host", port_ == 80 || port_ == 443 ? host_ : host_ + ":" + std::to_string(port_));
-
-    if (!options_.keep_alive && !req.headers().contains("Connection"))
-      req.headers().set("Connection", "close");
+    busy_guard guard(busy_);
+    complete_headers(req);
 
     const std::string wire = serialize(req);
     const bool head = req.method() == "HEAD";
@@ -122,18 +108,15 @@ public:
     if (!stream_)
       stream_.emplace(co_await connector_.connect(host_, port_));
 
-    std::exception_ptr error;
+    auto first = co_await async::try_await(exchange(wire, head));
 
-    try {
-      co_return co_await exchange(wire, head);
-    } catch (...) {
-      error = std::current_exception();
-    }
+    if (first)
+      co_return std::move(*first.value);
 
     close();
 
     if (!reused || !idempotent(req.method()))
-      std::rethrow_exception(error);
+      first.rethrow();
 
     // The server may have closed the kept alive connection meanwhile, retrying on a new one
     stream_.emplace(co_await connector_.connect(host_, port_));
@@ -173,68 +156,49 @@ public:
       stream_.reset();
     }
 
-    pending_.clear();
+    reader_.clear();
   }
 
   const std::string& host() const { return host_; }
   std::uint16_t port() const { return port_; }
 
 private:
+  /// Marks the client busy for the duration of a request
+  struct busy_guard {
+    explicit busy_guard(bool& busy)
+        : busy_(busy)
+    {
+      if (busy_)
+        throw std::logic_error("basic_client handles one request at a time");
+
+      busy_ = true;
+    }
+
+    ~busy_guard() { busy_ = false; }
+
+    busy_guard(const busy_guard&) = delete;
+    busy_guard& operator=(const busy_guard&) = delete;
+
+  private:
+    bool& busy_;
+  };
+
+  void complete_headers(webkit::request& req) const
+  {
+    if (!req.headers().contains("Host"))
+      req.headers().set("Host", port_ == 80 || port_ == 443 ? host_ : host_ + ":" + std::to_string(port_));
+
+    if (!options_.keep_alive && !req.headers().contains("Connection"))
+      req.headers().set("Connection", "close");
+  }
+
+  /// Writes a serialized request on the open connection and reads its response
   async::async<response> exchange(const std::string& wire, bool head)
   {
     co_await stream_->write(std::span<const char>(wire));
 
     response_parser parser(options_.limits);
-    parser.skip_body(head);
-
-    std::vector<char> buffer(options_.read_buffer_size);
-    std::string& pending = pending_;
-    bool closed = false;
-
-    for (;;) {
-      parse_status status = parse_status::need_more;
-
-      if (!pending.empty()) {
-        auto result = parser.feed(pending);
-        pending.erase(0, result.consumed);
-        status = result.status;
-      }
-
-      while (status == parse_status::need_more) {
-        std::size_t n = co_await stream_->read_some(std::span<char>(buffer));
-
-        if (n == 0) {
-          if (parser.idle())
-            throw connection_closed();
-
-          closed = true;
-          status = parser.finish();
-          break;
-        }
-
-        auto result = parser.feed(std::string_view(buffer.data(), n));
-
-        if (result.status == parse_status::done)
-          pending.append(buffer.data() + result.consumed, n - result.consumed);
-
-        status = result.status;
-      }
-
-      if (status == parse_status::error)
-        throw protocol_error(parser.error());
-
-      // Interim responses (100 Continue...) are skipped, 101 is final
-      int code = parser.message().status_code();
-
-      if (code >= 100 && code < 200 && code != 101 && !closed) {
-        parser.reset();
-        parser.skip_body(head);
-        continue;
-      }
-
-      break;
-    }
-
+    const bool closed = co_await read_final_response(parser, head);
     response res = parser.release();
 
     if (closed || !res.keep_alive() || !options_.keep_alive)
@@ -242,6 +206,35 @@ private:
 
     co_return res;
   }
+
+  /**
+   * @brief Reads responses until a final one, interim responses (100 Continue...) are skipped, 101 is final.
+   * @return true if the server closed the connection
+   */
+  async::async<bool> read_final_response(response_parser& parser, bool head)
+  {
+    for (;;) {
+      parser.skip_body(head);
+      const bool closed = co_await reader_.read(*stream_, parser) == read_status::end_of_stream;
+
+      if (closed) {
+        if (parser.idle())
+          throw connection_closed();
+
+        parser.finish();
+      }
+
+      if (parser.status() == parse_status::error)
+        throw protocol_error(parser.error());
+
+      if (closed || !is_interim(parser.message().status_code()))
+        co_return closed;
+
+      parser.reset();
+    }
+  }
+
+  static bool is_interim(int code) { return code >= 100 && code < 200 && code != 101; }
 
   static webkit::request with_body(std::string method, std::string target, std::string body, std::string content_type)
   {
@@ -263,7 +256,7 @@ private:
   client_options options_;
 
   std::optional<stream_type> stream_;
-  std::string pending_; // Bytes received after the last response
+  message_reader reader_{options_.read_buffer_size};
   bool busy_ = false;
 };
 

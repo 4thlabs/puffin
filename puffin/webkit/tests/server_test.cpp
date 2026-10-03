@@ -51,9 +51,10 @@ using namespace puffin::webkit;
 TEST_CASE("Router", "[webkit][router]")
 {
   basic_router<std::function<int()>> router;
-  router.get("/users", [] { return 1; });
-  router.get("/users/([0-9]+)", [] { return 2; });
-  router.post("/users", [] { return 3; });
+  router.add("GET", "/users", [] { return 1; });
+  router.add("GET", "/users/([0-9]+)", [] { return 2; });
+  router.add("POST", "/users", [] { return 3; });
+  router.add("POST", "/users/([0-9]+)", [] { return 4; });
 
   SECTION("Match by method and path")
   {
@@ -80,6 +81,12 @@ TEST_CASE("Router", "[webkit][router]")
   {
     auto m = router.find("DELETE", "/users");
     REQUIRE_FALSE(m);
+    REQUIRE(m.allowed_methods == std::vector<std::string>{"GET", "POST"});
+  }
+
+  SECTION("Allowed methods are listed once")
+  {
+    auto m = router.find("DELETE", "/users/1");
     REQUIRE(m.allowed_methods == std::vector<std::string>{"GET", "POST"});
   }
 

@@ -41,3 +41,18 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+  clang-tidy:
+    name: clang-tidy
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-tidy-18 libasio-dev libssl-dev qt6-base-dev
+
+      - name: Run clang-tidy
+        run: tools/clang-tidy.sh

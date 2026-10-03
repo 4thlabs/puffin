@@ -225,6 +225,12 @@ TEST_CASE("Serialization", "[webkit][http]")
     REQUIRE(serialize(res) == "HTTP/1.1 204 No Content\r\n\r\n");
   }
 
+  SECTION("Response to HEAD: headers describe the body, which is not sent")
+  {
+    response res(status::ok, "hello");
+    REQUIRE(serialize(res, {.omit_body = true}) == "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\n");
+  }
+
   SECTION("Chunked response")
   {
     response res(status::ok, "hello");
