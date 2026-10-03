@@ -196,6 +196,7 @@ TEST_CASE("imbd") {
     });
 
     REQUIRE_THROWS(db.row("doc_index_uuid", "5"));
+    REQUIRE_THROWS(db.row("doc_index_uui", "2"));
 
     auto& value = db.row("doc_index_uuid", "2");
 
@@ -207,7 +208,7 @@ TEST_CASE("Imdb Benchmark") {
   BENCHMARK_ADVANCED("1k Json")(Catch::Benchmark::Chronometer meter) {
     puffin::imdb::in_memory_database<std::string, json> db;
 
-    for (int i = 0; i < 1000; i++) {
+    for (int i = 0; i < 10000; i++) {
       db.insert("doc", sample);
     }
     db.insert("doc", sample3);
