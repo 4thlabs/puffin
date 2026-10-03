@@ -39,6 +39,9 @@
 
 #include "string_literal.hpp"
 
+#include <cstddef>
+#include <cstdint>
+
 template<size_t N>
 constexpr bool is_int(const string_literal<N>& rhs, size_t pos) {
   return rhs.compare_n("{Int}", pos);

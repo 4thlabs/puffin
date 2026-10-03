@@ -37,6 +37,8 @@
 #ifndef PFN_FUNCTION_TRAITS_HPP
 #define PFN_FUNCTION_TRAITS_HPP
 
+#include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <tuple>
 
