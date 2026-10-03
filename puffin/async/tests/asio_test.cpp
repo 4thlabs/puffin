@@ -36,7 +36,7 @@
 
 
 #include <puffin/async.hpp>
-#include <puffin/async/asio.hpp>
+#include <puffin/async/adapter/asio.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <asio/ip/tcp.hpp>
