@@ -54,6 +54,10 @@ namespace {
 
 QCoreApplication& application()
 {
+  // Other tests in the same binary may already have created the application
+  if (auto* app = QCoreApplication::instance())
+    return *app;
+
   static int argc = 1;
   static char name[] = "main_test";
   static char* argv[] = { name, nullptr };
