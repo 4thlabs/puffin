@@ -113,7 +113,7 @@ private:
   {
     const read_status status = co_await reader_.read(stream_, parser_);
 
-    if (status == read_status::end_of_stream)
+    if (status == read_status::end_of_stream) // A request cut by the client is dropped, nobody reads the answer
       co_return false;
 
     reply r;

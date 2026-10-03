@@ -41,6 +41,7 @@
 #include <puffin/webkit/http/parser.hpp>
 #include <puffin/webkit/transport/concepts.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <span>
 #include <string_view>
@@ -63,8 +64,9 @@ enum class read_status {
  */
 class message_reader {
 public:
+  /// A buffer of at least one byte: reading into an empty one would look like the end of the stream
   explicit message_reader(std::size_t buffer_size)
-      : buffer_(buffer_size)
+      : buffer_(std::max<std::size_t>(buffer_size, 1))
   {}
 
   /// Feeds the parser until its message is complete or invalid, or the stream ends

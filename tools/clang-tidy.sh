@@ -27,6 +27,8 @@ done
 if pkg-config --exists Qt6Network 2>/dev/null; then
   read -ra qt <<< "$(pkg-config --cflags Qt6Network)"
   flags+=("${qt[@]}")
+else
+  echo "warning: Qt6Network not found by pkg-config, the Qt adapter headers will fail to parse" >&2
 fi
 
 headers=()
@@ -41,7 +43,8 @@ status=0
 
 for header in "${headers[@]}"; do
   echo "clang-tidy $header"
-  "$CLANG_TIDY" --quiet "$header" -- "${flags[@]}" || status=1
+  # Only the header under check: the ones it includes get their own run
+  "$CLANG_TIDY" --quiet --header-filter='^$' "$header" -- "${flags[@]}" || status=1
 done
 
 exit $status
