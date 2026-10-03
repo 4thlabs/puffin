@@ -34,17 +34,22 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include <puffin/webkit/transport/concepts.hpp>
-#include <catch2/catch_test_macros.hpp>
+#ifndef PUFFIN_WEBKIT_TESTS_MEMORY_TRANSPORT_HPP
+#define PUFFIN_WEBKIT_TESTS_MEMORY_TRANSPORT_HPP
 
 #include <algorithm>
 #include <coroutine>
+#include <cstdint>
 #include <cstring>
+#include <deque>
+#include <memory>
+#include <span>
 #include <string>
+#include <string_view>
 
-using namespace puffin::webkit;
-
-namespace {
+namespace puffin {
+namespace webkit {
+namespace test {
 
 /// An awaiter that is always ready
 template<typename T>
@@ -56,69 +61,63 @@ struct ready {
   T await_resume() { return std::move(value); }
 };
 
-/// An in-memory stream, reads from `input` and writes to `output`
-struct memory_stream {
-  std::string input;
-  std::string output;
+/// Both ends of an in-memory connection, shared by the stream and the test
+struct pipe {
+  std::string input;  ///< Bytes the stream will read
+  std::string output; ///< Bytes written to the stream
+  std::size_t max_read = 7; ///< Small reads, to exercise incremental parsing
   bool closed = false;
+};
+
+/// A Stream reading and writing a pipe, completing synchronously
+struct memory_stream {
+  std::shared_ptr<pipe> p = std::make_shared<pipe>();
 
   ready<std::size_t> read_some(std::span<char> buffer)
   {
-    std::size_t n = std::min(buffer.size(), input.size());
-    std::memcpy(buffer.data(), input.data(), n);
-    input.erase(0, n);
+    std::size_t n = p->closed ? 0 : std::min({buffer.size(), p->input.size(), p->max_read});
+    std::memcpy(buffer.data(), p->input.data(), n);
+    p->input.erase(0, n);
     return {n};
   }
 
   ready<std::size_t> write(std::span<const char> data)
   {
-    output.append(data.data(), data.size());
+    p->output.append(data.data(), data.size());
     return {data.size()};
   }
 
-  void close() { closed = true; }
+  void close() { p->closed = true; }
 };
 
-struct memory_acceptor {
-  ready<memory_stream> accept() { return {memory_stream{}}; }
-  void close() {}
-  bool is_open() const { return true; }
-};
-
+/// A Connector handing out pipes prepared by the test, in order
 struct memory_connector {
-  ready<memory_stream> connect(std::string_view, std::uint16_t) { return {memory_stream{}}; }
+  std::shared_ptr<std::deque<std::shared_ptr<pipe>>> pipes = std::make_shared<std::deque<std::shared_ptr<pipe>>>();
+  std::shared_ptr<std::size_t> connections = std::make_shared<std::size_t>(0);
+
+  std::shared_ptr<pipe> add(std::string input)
+  {
+    auto p = std::make_shared<pipe>();
+    p->input = std::move(input);
+    pipes->push_back(p);
+    return p;
+  }
+
+  ready<memory_stream> connect(std::string_view, std::uint16_t)
+  {
+    ++*connections;
+
+    if (pipes->empty())
+      throw std::runtime_error("connection refused");
+
+    memory_stream s{pipes->front()};
+    pipes->pop_front();
+    return {std::move(s)};
+  }
 };
 
-/// Awaitable through operator co_await
-struct indirect {
-  ready<std::size_t> operator co_await() const { return {0}; }
-};
+} // namespace test
+} // namespace webkit
+} // namespace puffin
 
-struct not_a_stream {
-  void read_some(std::span<char>) {}
-};
-
-} // namespace
-
-static_assert(Awaitable<ready<int>>);
-static_assert(Awaitable<indirect>);
-static_assert(AwaitableOf<indirect, std::size_t>);
-static_assert(!Awaitable<int>);
-
-static_assert(Stream<memory_stream>);
-static_assert(!Stream<not_a_stream>);
-static_assert(Acceptor<memory_acceptor>);
-static_assert(Connector<memory_connector>);
-static_assert(std::is_same_v<accepted_stream_t<memory_acceptor>, memory_stream>);
-static_assert(std::is_same_v<connected_stream_t<memory_connector>, memory_stream>);
-
-TEST_CASE("Transport concepts", "[webkit][transport]")
-{
-  memory_stream s;
-  s.input = "hello";
-  char buffer[3];
-
-  REQUIRE(s.read_some(buffer).await_resume() == 3);
-  REQUIRE(s.write(std::span<const char>("ok", 2)).await_resume() == 2);
-  REQUIRE(s.output == "ok");
-}
+#endif // PUFFIN_WEBKIT_TESTS_MEMORY_TRANSPORT_HPP

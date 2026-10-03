@@ -116,6 +116,58 @@ Adapters, built when their dependency is found:
 - `puffin::async_qt` (`<puffin/async/qt.hpp>`, Qt 6): `qt::executor { context_object }`,
   `co_await qt::signal(sender, &Sender::signal)`, `qt::sleep_for`.
 
+### Webkit
+
+HTTP/1.1 server and client on top of `puffin::async` (`puffin::webkit`, header only). The HTTP
+core has no I/O, transports come from adapters.
+
+```c++
+#include <puffin/webkit.hpp>
+#include <puffin/webkit/asio.hpp>
+
+namespace pa = puffin::async;
+namespace wk = puffin::webkit;
+
+wk::basic_server<wk::middlewares::cookies, wk::middlewares::session> server;
+
+server.get("/hello", [](auto& ctx) { ctx.response().body("hello", "text/plain"); });
+
+server.get("/users/([0-9]+)", [](auto& ctx) -> pa::async<void> {
+  ctx.response().body(co_await load_user(ctx.param(0)), "application/json");
+  ctx.session()["last_user"] = std::string(ctx.param(0));
+});
+
+::asio::io_context io;
+wk::asio::tcp_acceptor acceptor(io, 8080);
+pa::co_spawn(pa::asio::executor { io }, server.listen(acceptor));
+io.run();
+```
+
+```c++
+wk::basic_client client(wk::asio::tcp_connector { io }, "example.com", 80);
+wk::response res = co_await client.get("/index.html");
+```
+
+- `request` / `response`: plain HTTP messages, shared by the server and the client.
+- `request_parser` / `response_parser`: incremental parsers (Content-Length, chunked, pipelining,
+  size limits), `serialize()` for the wire format.
+- `basic_server<Middlewares...>`: regex routes, handlers returning `void` or `async<void>`, 404,
+  405, HEAD, keep-alive. Handlers get a `basic_context<Middlewares...>` that each middleware
+  extends with its `data_type` (`ctx.cookies()`, `ctx.set_cookie()`, `ctx.session()`).
+- Middlewares define optional `before(ctx)` (returning `false` stops the request) and `after(ctx)`.
+- `basic_client<Connector>`: one host, kept alive connection, idempotent requests retried once on
+  a stale connection.
+- Transports implement the `Stream`, `Acceptor` and `Connector` concepts.
+
+Adapters, built when their dependency is found:
+
+- `puffin::webkit_asio` (`<puffin/webkit/asio.hpp>`): `asio::tcp_stream`, `asio::tcp_acceptor`,
+  `asio::tcp_connector`.
+- `puffin::webkit_asio_ssl` (`<puffin/webkit/asio_ssl.hpp>`, OpenSSL): `asio::tls_acceptor`,
+  `asio::tls_connector` (SNI and host name verification).
+- `puffin::webkit_qt` (`<puffin/webkit/qt.hpp>`, Qt 6 Network): `qt::tcp_stream`,
+  `qt::tcp_acceptor`, `qt::tcp_connector`, used with `puffin::async::qt::executor`.
+
 ### Ioc
 ### Maths
 

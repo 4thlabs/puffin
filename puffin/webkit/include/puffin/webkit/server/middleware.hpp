@@ -63,6 +63,7 @@ public:
   middleware_chain() = default;
 
   explicit middleware_chain(Middlewares... middlewares)
+    requires(sizeof...(Middlewares) > 0)
       : middlewares_(std::move(middlewares)...)
   {}
 

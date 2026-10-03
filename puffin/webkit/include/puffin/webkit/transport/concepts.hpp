@@ -66,13 +66,16 @@ concept Stream = requires(S& s, std::span<char> in, std::span<const char> out) {
 };
 
 /**
- * @brief Accepts incoming connections, co_await on accept() returns a connected Stream
+ * @brief Accepts incoming connections, co_await on accept() returns a connected Stream.
+ *
+ * Once close() is called, pending and further accept() complete with an error and is_open() returns false.
  */
 template<typename A>
 concept Acceptor = requires(A& a) {
   { a.accept() } -> Awaitable;
   requires Stream<await_result_t<decltype(a.accept())>>;
   a.close();
+  { a.is_open() } -> std::convertible_to<bool>;
 };
 
 /**

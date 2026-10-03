@@ -34,31 +34,59 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PUFFIN_WEBKIT_HPP
-#define PUFFIN_WEBKIT_HPP
+#include <puffin/async.hpp>
+#include <puffin/async/asio.hpp>
+#include <puffin/webkit.hpp>
+#include <puffin/webkit/asio.hpp>
 
-#include <puffin/webkit/uri/uri.hpp>
+#include <asio/signal_set.hpp>
 
-#include <puffin/webkit/http/cookie.hpp>
-#include <puffin/webkit/http/errors.hpp>
-#include <puffin/webkit/http/headers.hpp>
-#include <puffin/webkit/http/parser.hpp>
-#include <puffin/webkit/http/request.hpp>
-#include <puffin/webkit/http/response.hpp>
-#include <puffin/webkit/http/serializer.hpp>
-#include <puffin/webkit/http/status.hpp>
-#include <puffin/webkit/http/version.hpp>
+#include <chrono>
+#include <cstdlib>
+#include <iostream>
+#include <string>
 
-#include <puffin/webkit/server/context.hpp>
-#include <puffin/webkit/server/middleware.hpp>
-#include <puffin/webkit/server/router.hpp>
-#include <puffin/webkit/server/server.hpp>
+namespace pa = puffin::async;
+namespace wk = puffin::webkit;
 
-#include <puffin/webkit/client/client.hpp>
+using namespace std::chrono_literals;
 
-#include <puffin/webkit/middlewares/cookies.hpp>
-#include <puffin/webkit/middlewares/session.hpp>
+// Counts the visits of each client in its session cookie:
+//   curl -c jar -b jar http://127.0.0.1:8080/visits
+int main(int argc, char** argv)
+{
+  std::uint16_t port = argc > 1 ? static_cast<std::uint16_t>(std::atoi(argv[1])) : 8080;
 
-#include <puffin/webkit/transport/concepts.hpp>
+  ::asio::io_context io;
+  pa::asio::executor executor{io};
 
-#endif // PUFFIN_WEBKIT_HPP
+  wk::basic_server<wk::middlewares::cookies, wk::middlewares::session> server;
+
+  server.get("/", [](auto& ctx) { ctx.response().body("Hello from puffin\n", "text/plain"); });
+
+  server.get("/visits", [](auto& ctx) {
+    auto& visits = ctx.session()["visits"];
+    visits = std::to_string(visits.empty() ? 1 : std::stoi(visits) + 1);
+    ctx.response().body("Visits: " + visits + "\n", "text/plain");
+  });
+
+  server.get("/wait/([0-9]+)", [executor](auto& ctx) -> pa::async<void> {
+    co_await pa::asio::sleep_for(executor, std::chrono::milliseconds(std::stoi(std::string(ctx.param(0)))));
+    ctx.response().body("Waited\n", "text/plain");
+  });
+
+  wk::asio::tcp_acceptor acceptor(io, port);
+  std::cout << "Listening on http://0.0.0.0:" << acceptor.port() << std::endl;
+
+  pa::co_spawn(executor, server.listen(acceptor), [](std::exception_ptr e) {
+    if (e)
+      std::cerr << "Server stopped with an error" << std::endl;
+  });
+
+  // Ctrl+C closes the acceptor, run() returns once the connections are done
+  ::asio::signal_set signals(io, SIGINT, SIGTERM);
+  signals.async_wait([&](auto, int) { acceptor.close(); });
+
+  io.run();
+  return 0;
+}

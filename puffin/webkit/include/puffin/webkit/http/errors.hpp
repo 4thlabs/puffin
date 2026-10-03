@@ -34,31 +34,62 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PUFFIN_WEBKIT_HPP
-#define PUFFIN_WEBKIT_HPP
+#ifndef PUFFIN_WEBKIT_HTTP_ERRORS_HPP
+#define PUFFIN_WEBKIT_HTTP_ERRORS_HPP
 
-#include <puffin/webkit/uri/uri.hpp>
-
-#include <puffin/webkit/http/cookie.hpp>
-#include <puffin/webkit/http/errors.hpp>
-#include <puffin/webkit/http/headers.hpp>
 #include <puffin/webkit/http/parser.hpp>
-#include <puffin/webkit/http/request.hpp>
-#include <puffin/webkit/http/response.hpp>
-#include <puffin/webkit/http/serializer.hpp>
-#include <puffin/webkit/http/status.hpp>
-#include <puffin/webkit/http/version.hpp>
 
-#include <puffin/webkit/server/context.hpp>
-#include <puffin/webkit/server/middleware.hpp>
-#include <puffin/webkit/server/router.hpp>
-#include <puffin/webkit/server/server.hpp>
+#include <stdexcept>
+#include <string>
 
-#include <puffin/webkit/client/client.hpp>
+namespace puffin {
+namespace webkit {
 
-#include <puffin/webkit/middlewares/cookies.hpp>
-#include <puffin/webkit/middlewares/session.hpp>
+inline const char* to_string(parse_error e) noexcept
+{
+  switch (e) {
+    case parse_error::none: return "none";
+    case parse_error::bad_start_line: return "bad start line";
+    case parse_error::bad_version: return "bad version";
+    case parse_error::bad_status_code: return "bad status code";
+    case parse_error::bad_header: return "bad header";
+    case parse_error::bad_content_length: return "bad content length";
+    case parse_error::bad_transfer_encoding: return "bad transfer encoding";
+    case parse_error::bad_chunk: return "bad chunk";
+    case parse_error::header_too_large: return "header too large";
+    case parse_error::body_too_large: return "body too large";
+    case parse_error::unexpected_eof: return "unexpected end of stream";
+  }
 
-#include <puffin/webkit/transport/concepts.hpp>
+  return "unknown";
+}
 
-#endif // PUFFIN_WEBKIT_HPP
+/**
+ * @brief Thrown by the client when the peer sends an invalid HTTP message
+ */
+class protocol_error : public std::runtime_error {
+public:
+  explicit protocol_error(parse_error e)
+      : std::runtime_error(std::string("HTTP protocol error: ") + to_string(e)), error_(e)
+  {}
+
+  parse_error error() const noexcept { return error_; }
+
+private:
+  parse_error error_;
+};
+
+/**
+ * @brief Thrown by the client when the connection is closed before a response is received
+ */
+class connection_closed : public std::runtime_error {
+public:
+  connection_closed()
+      : std::runtime_error("Connection closed before a response was received")
+  {}
+};
+
+} // namespace webkit
+} // namespace puffin
+
+#endif // PUFFIN_WEBKIT_HTTP_ERRORS_HPP
