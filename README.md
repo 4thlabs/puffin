@@ -1,76 +1,90 @@
 <p align="center">
-  <img src="./docs/logo.svg" height="128">
+  <img src="./docs/logo.svg" height="128" alt="Puffin">
 </p>
 
-# Puffin Cpp
+<h1 align="center">Puffin Cpp</h1>
 
-Puffin Cpp is a small c++ library made of simple utilities like event bus, meta template helpers, used to bootstrap projects faster.
+<p align="center">
+  Small, header-only C++20 building blocks to bootstrap projects faster:<br>
+  coroutines, an HTTP server and client, an event bus, an IoC container and more.
+</p>
 
-### Common
-### Events
+<p align="center">
+  <a href="https://github.com/4thlabs/puffin/actions/workflows/ci.yml"><img src="https://github.com/4thlabs/puffin/actions/workflows/ci.yml/badge.svg?branch=master" alt="CI"></a>
+  <a href="LICENSE.md"><img src="https://img.shields.io/badge/license-BSD--3--Clause-blue.svg" alt="License: BSD 3-Clause"></a>
+  <img src="https://img.shields.io/badge/C%2B%2B-20-blue.svg?logo=cplusplus" alt="C++20">
+  <img src="https://img.shields.io/badge/header--only-yes-brightgreen.svg" alt="Header only">
+  <img src="https://img.shields.io/badge/CMake-3.24%2B-064F8C.svg?logo=cmake" alt="CMake 3.24+">
+</p>
 
-```c++
+---
 
-#include <puffin/events/event_bus.hpp>
-#include <iostream>
+## Modules
 
-using namespace pfn::events;
+Each module is a separate CMake target, link only what you use.
 
-struct my_event {};
-struct my_event_2 {};
-struct my_event_3 {};
-struct my_event_4 {};
+| Module | Target | Description | Docs |
+| --- | --- | --- | --- |
+| **async** | `puffin::async` | C++20 coroutines independent of any event loop, with asio and Qt adapters. | [README](puffin/async/README.md) |
+| **webkit** | `puffin::webkit` | HTTP/1.1 server and client on `puffin::async`, sans-IO core, asio (TCP, TLS) and Qt transports. | [README](puffin/webkit/README.md) |
+| **imdb** | `puffin::imdb` | In-memory database with fluent requests, views, indexes and JSON helpers. | [README](puffin/imdb/README.md) |
+| **events** | `puffin::events` | Type-safe event bus. | [Example](#events) |
+| **ioc** | `puffin::ioc` | Dependency injection container with typed bindings. | |
+| **maths** | `puffin::maths` | `vector3`, `vector4`, `matrix4` and transforms. | |
+| **common** | `puffin::common` | Type traits, tuple helpers, compile-time string and path literals. | |
 
-using my_events = events
-<
-  my_event, 
-  my_event_2,
-  my_event_3
->;
+Adapters are separate targets, built only when their dependency is found:
 
-class my_class {
-public:
-  void handle(const my_event& e) {
-    std::cout << "class: my_event handler" << std::endl;
-  }
-};
+| Target | Requires |
+| --- | --- |
+| `puffin::async_asio` | asio (standalone) or Boost.Asio |
+| `puffin::async_qt` | Qt 6 Core |
+| `puffin::webkit_asio` | `puffin::async_asio` |
+| `puffin::webkit_asio_ssl` | `puffin::webkit_asio` and OpenSSL |
+| `puffin::webkit_qt` | `puffin::async_qt` and Qt 6 Network |
 
-int main(int argc, char** argv) {
-  my_class m;
-  event_bus<my_events> bus;
+## Getting started
 
-  std::function<void(const my_event_2&)> f = [](const my_event_2& e) {
-    std::cout << "std::function my_event_2 handler" << std::endl;
-  };
+Requirements: a C++20 compiler (tested with GCC 13 and Clang 18) and CMake 3.24 or newer.
 
-  bus.add_handler<my_event>([](const my_event& e) {
-    std::cout << "lambda my_event handler" << std::endl;
-  });
+With `FetchContent`:
 
-  bus.add_handler<my_event_2>(f);
+```cmake
+include(FetchContent)
 
-  /*bus.add_handler<my_event>(
-    std::bind(&my_class::handle, &m, std::placeholders::_1)
-  );*/
-  
-  bus.add_handler<my_event>(&m);
+FetchContent_Declare(puffin
+  GIT_REPOSITORY https://github.com/4thlabs/puffin.git
+  GIT_TAG master
+)
+FetchContent_MakeAvailable(puffin)
 
-  bus.send(my_event());
-  bus.send(my_event_2());
-  
-  //bus.clear<my_event>();
-  bus.remove_handler<my_event>(&m);
-
-  bus.send(my_event());
-  bus.send(my_event_2());
-
-  return 0;
-}
+target_link_libraries(my_app PRIVATE puffin::webkit_asio)
 ```
 
-### Async
+Or with a copy of the repository: `add_subdirectory(puffin)`.
 
-C++20 coroutines, independent of any event loop (`puffin::async`, header only), with asio and Qt adapters.
+## Building and testing
+
+```sh
+sudo apt-get install libasio-dev libssl-dev qt6-base-dev   # optional, for the adapters
+
+cmake -S . -B build -DBUILD_TESTS=ON -DBUILD_SAMPLES=ON
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `BUILD_TESTS` | `OFF` | Builds the Catch2 test suite (`build/tests/main_test`). |
+| `BUILD_SAMPLES` | `OFF` | Builds the samples in [`samples/`](samples). |
+| `PUFFIN_ASYNC_WITH_ASIO` | `ON` | Builds the asio adapters when asio is found. |
+| `PUFFIN_ASYNC_USE_BOOST_ASIO` | `OFF` | Uses Boost.Asio instead of standalone asio. |
+| `PUFFIN_ASYNC_WITH_QT` | `ON` | Builds the Qt adapters when Qt 6 is found. |
+| `PUFFIN_WEBKIT_WITH_SSL` | `ON` | Builds the TLS transport when OpenSSL is found. |
+
+## A quick tour
+
+### Async
 
 ```c++
 #include <puffin/async.hpp>
@@ -79,12 +93,14 @@ using namespace puffin::async;
 
 async<int> answer() { co_return 42; }
 
-async<int> twice() {
+async<int> twice()
+{
   auto [a, b] = co_await when_all(answer(), answer());
   co_return a + b;
 }
 
-int main() {
+int main()
+{
   thread_executor executor;
   executor.run(false); // pump on an owned thread
 
@@ -92,12 +108,9 @@ int main() {
 }
 ```
 
-Full documentation: [puffin/async/README.md](puffin/async/README.md).
+More in [puffin/async/README.md](puffin/async/README.md).
 
 ### Webkit
-
-HTTP/1.1 server and client on top of `puffin::async` (`puffin::webkit`, header only). The HTTP core has no I/O,
-transports come from asio (TCP, TLS) and Qt adapters.
 
 ```c++
 #include <puffin/webkit.hpp>
@@ -119,12 +132,10 @@ pa::co_spawn(pa::asio::executor { io }, server.listen(acceptor));
 io.run();
 ```
 
-Full documentation: [puffin/webkit/README.md](puffin/webkit/README.md).
+More in [puffin/webkit/README.md](puffin/webkit/README.md) and
+[samples/webkit_server_sample.cpp](samples/webkit_server_sample.cpp).
 
 ### Imdb
-
-A small in-memory database queried with a fluent request (`puffin::imdb`, header only), with views, indexes and
-nlohmann JSON helpers.
 
 ```c++
 #include <puffin/imdb.hpp>
@@ -142,10 +153,46 @@ auto cards = db.select()
                .execute();
 ```
 
-Full documentation: [puffin/imdb/README.md](puffin/imdb/README.md).
+More in [puffin/imdb/README.md](puffin/imdb/README.md).
 
-### Ioc
-### Maths
+### Events
 
+```c++
+#include <puffin/events/event_bus.hpp>
+#include <iostream>
 
-[logo]: ./docs/logo.svg 
+using namespace puffin::events;
+
+struct user_created {};
+struct user_deleted {};
+
+using my_events = events<user_created, user_deleted>;
+
+struct audit {
+  void handle(const user_created&) { std::cout << "audit: user created\n"; }
+};
+
+int main()
+{
+  audit a;
+  event_bus<my_events> bus;
+
+  bus.add_handler<user_created>([](const user_created&) { std::cout << "lambda handler\n"; });
+  bus.add_handler<user_created>(&a);    // calls a.handle(event)
+
+  bus.send(user_created {});
+
+  bus.remove_handler<user_created>(&a);
+  bus.send(user_created {});            // only the lambda now
+}
+```
+
+The full example is in [samples/event_bus_sample.cpp](samples/event_bus_sample.cpp).
+
+## Roadmap
+
+What is done and what is next, module by module: [docs/roadmap.md](docs/roadmap.md).
+
+## License
+
+Puffin is released under the [BSD 3-Clause License](LICENSE.md).
