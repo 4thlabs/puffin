@@ -38,213 +38,210 @@
 #define PUFFIN_ASYNC_ASYNC_HPP
 
 #include <puffin/async/executor.hpp>
-#include <puffin/async/impl/thread_executor.hpp>
 
 #include <coroutine>
 #include <exception>
+#include <type_traits>
+#include <utility>
+#include <variant>
 
 namespace puffin {
 namespace async {
 
-struct co_entry_point {};
+template<typename T = void>
+class async;
 
-template<Executor E>
-struct promise_base {
+namespace detail {
+
+class promise_base {
 public:
-  using executor_type = E;
+  /**
+   * @brief Resumes the awaiting coroutine. Symmetric transfer when it runs on the same executor,
+   *        otherwise it is posted back to its own executor.
+   */
+  struct final_awaitable {
+    bool await_ready() const noexcept { return false; }
 
-  executor_type* executor = nullptr;
-  std::coroutine_handle<> precursor = nullptr;
-  std::exception_ptr exception = nullptr;
+    template<typename P>
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<P> h) const noexcept
+    {
+      promise_base& p = h.promise();
 
-  promise_base() {}
+      if (!p.continuation_)
+        return std::noop_coroutine();
+
+      if (p.continuation_executor_ && !(p.continuation_executor_ == p.executor_)) {
+        p.continuation_executor_.post(p.continuation_);
+        return std::noop_coroutine();
+      }
+
+      return p.continuation_;
+    }
+
+    void await_resume() const noexcept {}
+  };
+
+  std::suspend_always initial_suspend() const noexcept { return {}; }
+  final_awaitable final_suspend() const noexcept { return {}; }
+
+  any_executor& executor() noexcept { return executor_; }
+
+  void set_continuation(std::coroutine_handle<> continuation, any_executor executor) noexcept
+  {
+    continuation_ = continuation;
+    continuation_executor_ = std::move(executor);
+  }
+
+private:
+  any_executor executor_;
+  std::coroutine_handle<> continuation_;
+  any_executor continuation_executor_;
 };
+
+template<typename T>
+class promise final : public promise_base {
+public:
+  async<T> get_return_object() noexcept;
+
+  template<typename U = T>
+    requires std::convertible_to<U&&, T>
+  void return_value(U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>)
+  {
+    result_.template emplace<1>(std::forward<U>(value));
+  }
+
+  void unhandled_exception() noexcept { result_.template emplace<2>(std::current_exception()); }
+
+  T result()
+  {
+    if (result_.index() == 2)
+      std::rethrow_exception(std::get<2>(result_));
+
+    return std::move(std::get<1>(result_));
+  }
+
+private:
+  std::variant<std::monostate, T, std::exception_ptr> result_;
+};
+
+template<>
+class promise<void> final : public promise_base {
+public:
+  async<void> get_return_object() noexcept;
+
+  void return_void() noexcept {}
+
+  void unhandled_exception() noexcept { exception_ = std::current_exception(); }
+
+  void result()
+  {
+    if (exception_)
+      std::rethrow_exception(exception_);
+  }
+
+private:
+  std::exception_ptr exception_;
+};
+
+}
 
 /**
- * @brief The final_awaitable class
+ * @brief A lazy coroutine task. The body starts when the task is awaited (or spawned), on the
+ *        executor of the awaiting coroutine, and resumes it once done.
  */
-template<typename P>
-struct final_awaitable {
+template<typename T>
+class [[nodiscard]] async {
+public:
+  static_assert(!std::is_reference_v<T>, "async<T&> is not supported, use a pointer or std::reference_wrapper");
+
+  using value_type = T;
+  using promise_type = detail::promise<T>;
+  using handle_type = std::coroutine_handle<promise_type>;
+
+  async() noexcept = default;
+
+  explicit async(handle_type handle) noexcept
+      : handle_(handle)
+  {}
+
+  async(async&& rhs) noexcept
+      : handle_(std::exchange(rhs.handle_, nullptr))
+  {}
+
+  async& operator=(async&& rhs) noexcept
+  {
+    if (this != &rhs) {
+      if (handle_)
+        handle_.destroy();
+
+      handle_ = std::exchange(rhs.handle_, nullptr);
+    }
+
+    return *this;
+  }
+
+  async(const async&) = delete;
+  async& operator=(const async&) = delete;
+
+  ~async()
+  {
+    if (handle_)
+      handle_.destroy();
+  }
+
+  bool valid() const noexcept { return handle_ != nullptr; }
+
   bool await_ready() const noexcept { return false; }
-  void await_resume() const noexcept {}
 
-  void await_suspend(std::coroutine_handle<P> h) const noexcept {
-    auto precursor = h.promise().precursor;
-    auto executor = h.promise().executor;
-
-    if (precursor)
-      executor->post(precursor);
-  }
-};
-
-template<typename T = void, Executor E = thread_executor>
-class async  {
-public:
-  struct promise_type : public promise_base<E> {
-    T value;
-
-    promise_type()
-        : promise_base<E>()
-    {};
-
-    async get_return_object()
-    {
-      return async { std::coroutine_handle<promise_type>::from_promise(*this) };
-    }
-
-    std::suspend_always initial_suspend() { return {}; }
-
-    auto final_suspend() noexcept {
-       return final_awaitable<promise_type>{};
-    }
-
-    void return_value(T v) noexcept
-    {
-      value = v;
-    }
-
-    void unhandled_exception()
-    {
-      this->exception = std::current_exception();
-    }
-  };
-
-  explicit async(const std::coroutine_handle<promise_type> handle) noexcept
-      : handle_(handle)
-  {}
-
-  async(async&& rhs) noexcept
-      : handle_(rhs.handle_)
+  template<typename P>
+  std::coroutine_handle<> await_suspend(std::coroutine_handle<P> caller) noexcept
   {
-    rhs.handle_ = nullptr;
+    auto& p = handle_.promise();
+    auto executor = executor_of(caller);
+
+    if (!p.executor())
+      p.executor() = executor;
+
+    p.set_continuation(caller, std::move(executor));
+    return handle_;
   }
 
-  ~async()
-  {
-    if (handle_)
-      handle_.destroy();
-  }
+  T await_resume() { return handle_.promise().result(); }
 
-  template<typename Promise>
-  void await_suspend(std::coroutine_handle<Promise> h) const noexcept
-  {
-    auto executor = h.promise().executor;
-    handle_.promise().executor = executor;
-    handle_.promise().precursor = h;
-
-    executor->post(handle_);
-  }
-
-  bool await_ready() { return handle_.done(); }
-
-  T await_resume() {
-    if (handle_.promise().exception)
-      std::rethrow_exception(handle_.promise().exception);
-
-    return handle_.promise().value;
-  }
+  /**
+   * @brief Low level access, for drivers like co_spawn or when_all
+   */
+  handle_type handle() const noexcept { return handle_; }
 
 private:
-  std::coroutine_handle<promise_type> handle_;
-
-  async(const async&) = delete;
-  async& operator=(const async&) = delete;
+  handle_type handle_ = nullptr;
 };
 
-template<Executor E>
-class async<void, E> {
-public:
-  struct promise_type : public promise_base<E> {
-    promise_type()
-        : promise_base<E>()
-    {}
+namespace detail {
 
-    async get_return_object() {
-      return async { std::coroutine_handle<promise_type>::from_promise(*this) };
-    }
+template<typename T>
+async<T> promise<T>::get_return_object() noexcept
+{
+  return async<T> { std::coroutine_handle<promise<T>>::from_promise(*this) };
+}
 
-    std::suspend_always initial_suspend() { return {}; }
+inline async<void> promise<void>::get_return_object() noexcept
+{
+  return async<void> { std::coroutine_handle<promise<void>>::from_promise(*this) };
+}
 
-    auto final_suspend() noexcept {
-      return final_awaitable<promise_type>{};
-    }
+}
 
-    void return_void() {}
+template<typename T>
+struct is_async : std::false_type {};
 
-    void unhandled_exception() {
-      this->exception = std::current_exception();
-    }
-  };
+template<typename T>
+struct is_async<async<T>> : std::true_type {};
 
-  explicit async(const std::coroutine_handle<promise_type> handle) noexcept
-      : handle_(handle)
-  {}
-
-  async(async&& rhs) noexcept
-      : handle_(rhs.handle_)
-  {
-    rhs.handle_ = nullptr;
-  }
-
-  ~async()
-  {
-    if (handle_)
-      handle_.destroy();
-  }
-
-  template<typename Promise>
-  void await_suspend(std::coroutine_handle<Promise> h) const noexcept
-  {
-    auto executor = h.promise().executor;
-    handle_.promise().executor = executor;
-    handle_.promise().precursor = h;
-
-    executor->post(handle_);
-  }
-
-  bool await_ready() { return handle_.done(); }
-
-  void await_resume() {
-    if (handle_.promise().exception)
-      std::rethrow_exception(handle_.promise().exception);
-  }
-
-private:
-  std::coroutine_handle<promise_type> handle_;
-
-  async(const async&) = delete;
-  async& operator=(const async&) = delete;
-};
-
-template<Executor E>
-class async<co_entry_point, E> {
-public:
-  struct promise_type : public promise_base<E> {
-    promise_type()
-        : promise_base<E>()
-    {}
-
-    async get_return_object() {
-      return async { std::coroutine_handle<promise_type>::from_promise(*this) };
-    }
-    std::suspend_never initial_suspend() { return {}; }
-    std::suspend_never final_suspend() noexcept { return {}; }
-
-    void return_void() {}
-    void unhandled_exception() {}
-  };
-
-  bool await_ready() { return true; }
-  void await_suspend(std::coroutine_handle<promise_type> h) const noexcept {}
-  void await_resume() {}
-
-  explicit async(const std::coroutine_handle<promise_type> handle) noexcept
-  {}
-};
+template<typename T>
+inline constexpr bool is_async_v = is_async<std::remove_cvref_t<T>>::value;
 
 }
 }
-
-#include <puffin/async/co_spawn.hpp>
 
 #endif // PUFFIN_ASYNC_ASYNC_HPP

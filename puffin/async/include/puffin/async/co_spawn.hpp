@@ -37,25 +37,148 @@
 #ifndef PUFFIN_ASYNC_CO_SPAWN_HPP
 #define PUFFIN_ASYNC_CO_SPAWN_HPP
 
+#include <puffin/async/async.hpp>
+#include <puffin/async/executor.hpp>
+
+#include <concepts>
+#include <coroutine>
+#include <exception>
 #include <functional>
+#include <optional>
+#include <type_traits>
+#include <utility>
 
 namespace puffin {
 namespace async {
 
-using completion = std::function<void(const std::exception_ptr e)>;
+namespace detail {
 
-template<Executor E, typename T>
-async<co_entry_point> co_spawn(E& e, async<T> work, const completion& completion = [](auto){}) {
-  co_await e.schedule();
-  std::exception_ptr ex = nullptr;
+/**
+ * @brief Fire and forget coroutine, owning its own frame. Used to drive tasks from non
+ *        coroutine code.
+ */
+class detached_task {
+public:
+  struct promise_type {
+    detached_task get_return_object() noexcept
+    {
+      return detached_task { std::coroutine_handle<promise_type>::from_promise(*this) };
+    }
 
-  try {
-    co_await work;
-  } catch (...) {
-    ex = std::current_exception();
+    std::suspend_always initial_suspend() const noexcept { return {}; }
+    std::suspend_never final_suspend() const noexcept { return {}; }
+
+    void return_void() noexcept {}
+    void unhandled_exception() noexcept { std::terminate(); }
+
+    any_executor& executor() noexcept { return executor_; }
+
+    any_executor executor_;
+  };
+
+  explicit detached_task(std::coroutine_handle<promise_type> handle) noexcept
+      : handle_(handle)
+  {}
+
+  /**
+   * @brief Starts the coroutine on the executor, or inline when the executor is empty
+   */
+  void start(any_executor executor) &&
+  {
+    auto handle = std::exchange(handle_, nullptr);
+    handle.promise().executor_ = executor;
+
+    if (executor)
+      executor.post(handle);
+    else
+      handle.resume();
   }
 
-  completion(ex);
+private:
+  std::coroutine_handle<promise_type> handle_;
+};
+
+template<typename T, typename C>
+void invoke_completion(C& completion, std::exception_ptr ex, T* value)
+{
+  if constexpr (!std::is_void_v<T> && std::invocable<C&, std::exception_ptr, T>) {
+    static_assert(std::is_default_constructible_v<T>,
+                  "completion(std::exception_ptr, T) requires T to be default constructible");
+
+    if (value)
+      std::invoke(completion, ex, std::move(*value));
+    else
+      std::invoke(completion, ex, T {});
+  } else {
+    static_assert(std::invocable<C&, std::exception_ptr>,
+                  "completion must be invocable with (std::exception_ptr) or (std::exception_ptr, T)");
+    std::invoke(completion, ex);
+  }
+}
+
+template<typename F, typename C>
+detached_task spawn_entry(F factory, C completion)
+{
+  using task_type = std::invoke_result_t<F&>;
+  using value_type = typename task_type::value_type;
+
+  std::exception_ptr ex = nullptr;
+
+  if constexpr (std::is_void_v<value_type>) {
+    try {
+      co_await std::invoke(factory);
+    } catch (...) {
+      ex = std::current_exception();
+    }
+
+    detail::invoke_completion<void>(completion, ex, nullptr);
+  } else {
+    std::optional<value_type> value;
+
+    try {
+      value.emplace(co_await std::invoke(factory));
+    } catch (...) {
+      ex = std::current_exception();
+    }
+
+    detail::invoke_completion<value_type>(completion, ex, value ? &*value : nullptr);
+  }
+}
+
+}
+
+/**
+ * @brief Default completion of co_spawn, discards the result and any exception
+ */
+struct detached_t {
+  void operator()(std::exception_ptr) const noexcept {}
+};
+
+inline constexpr detached_t detached {};
+
+/**
+ * @brief Starts a task on an executor without waiting for it.
+ *
+ * The completion is called on the executor once the task is done, with (std::exception_ptr) or
+ * (std::exception_ptr, T). The task is started from a call posted to the executor (inline if the
+ * executor is empty).
+ */
+template<typename T, typename C = detached_t>
+void co_spawn(any_executor executor, async<T> task, C completion = {})
+{
+  detail::spawn_entry([task = std::move(task)]() mutable { return std::move(task); }, std::move(completion))
+      .start(std::move(executor));
+}
+
+/**
+ * @brief Same as above, but the task is created by calling factory, which is kept alive (with its
+ *        captures) until the task is done. Prefer this form with capturing lambdas.
+ */
+template<typename F, typename C = detached_t>
+  requires std::invocable<F&> && is_async_v<std::invoke_result_t<F&>>
+void co_spawn(any_executor executor, F factory, C completion = {})
+{
+  detail::spawn_entry(std::move(factory), std::move(completion)).start(std::move(executor));
 }
 
 }
