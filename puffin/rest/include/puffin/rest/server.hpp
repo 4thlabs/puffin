@@ -106,25 +106,6 @@ interceptor_set<std::decay_t<Interceptors>...> interceptors(Interceptors&&... i)
   return {{std::forward<Interceptors>(i)...}};
 }
 
-/**
- * @brief A service bound to a part of the api: it serves only the endpoints nested in Scope.
- *
- * Endpoints with the same method, path and parts are the same type, when such an endpoint appears in several
- * domains each domain gets its own service:
- *
- *   rest::mount<v1>(server, rest::serve<users::api>(users_service{}), rest::serve<cards::api>(cards_service{}));
- */
-template<typename Scope, typename Service>
-struct scoped_service {
-  Service service;
-};
-
-template<typename Scope, typename Service>
-scoped_service<Scope, std::decay_t<Service>> serve(Service&& service)
-{
-  return {std::forward<Service>(service)};
-}
-
 /// Continues a server call: the next interceptor, or security, decoding and the service
 class next_handler {
 public:
@@ -154,27 +135,6 @@ struct is_interceptor_set<interceptor_set<I...>> : std::true_type {};
 
 template<typename T>
 inline constexpr bool is_service_v = !is_validator_set<T>::value && !is_interceptor_set<T>::value;
-
-/// A service argument of mount: the service and the part of the api it serves (void: all of it)
-template<typename T>
-struct service_traits {
-  using type = T;
-  using scope = void;
-
-  static T& get(T& s) { return s; }
-};
-
-template<typename Scope, typename S>
-struct service_traits<scoped_service<Scope, S>> {
-  using type = S;
-  using scope = Scope;
-
-  static S& get(scoped_service<Scope, S>& s) { return s.service; }
-};
-
-template<typename T, typename R>
-inline constexpr bool in_scope_v =
-    std::is_void_v<typename service_traits<T>::scope> || contains_v<typename service_traits<T>::scope, typename R::origins>;
 
 template<typename S>
 struct scheme_value;
@@ -541,15 +501,12 @@ private:
   static constexpr std::size_t service_index()
   {
     constexpr std::array<bool, arg_count + 1> candidates = {
-        (is_service_v<Args> && in_scope_v<Args, R> && implements<typename service_traits<Args>::type, R, Ctx>::value)...,
-        false};
+        (is_service_v<Args> && implements<Args, R, Ctx>::value)..., false};
 
     static_assert(count_true(candidates) != 0,
                   "an endpoint of the api is not implemented by any service: expected "
                   "operator()(Endpoint, path params..., parts..., [context&])");
-    static_assert(count_true(candidates) < 2,
-                  "an endpoint of the api is implemented by several services: bind them to their domain with "
-                  "rest::serve<domain::api>(service)");
+    static_assert(count_true(candidates) < 2, "an endpoint of the api is implemented by several services");
 
     return first_true(candidates);
   }
@@ -561,9 +518,7 @@ private:
     using returns = typename R::returns;
     using expected = typename R::result_type;
 
-    constexpr std::size_t index = service_index<R>();
-    using arg_type = std::tuple_element_t<index, std::tuple<Args...>>;
-    auto& service = service_traits<arg_type>::get(std::get<index>(items_));
+    auto& service = std::get<service_index<R>()>(items_);
     using service_type = std::remove_reference_t<decltype(service)>;
 
     auto call = [&](auto&&... args) {
@@ -614,6 +569,10 @@ void register_routes(Server& server, const std::shared_ptr<State>& state, typeli
 {
   using context_type = typename Server::context_type;
 
+  static_assert(((Api::template count<typename Rs::endpoint> == 1) && ...),
+                "an endpoint appears several times in the api: endpoints with the same method, path and parts are "
+                "the same type, add a name<\"...\"> to tell them apart");
+
   (server.route(std::string(method_name(Rs::method)), Rs::path_type::regex(),
                 [state](context_type& ctx) { return State::template handle<Rs>(state, ctx); }),
    ...);
@@ -629,8 +588,7 @@ void register_routes(Server& server, const std::shared_ptr<State>& state, typeli
  *                         rest::validators(check_api_key),
  *                         rest::interceptors(audit{}));
  *
- * Every endpoint must be implemented by exactly one service (rest::serve<domain::api>(service) restricts a
- * service to a part of the api), as operator()(Endpoint, args...) with the
+ * Every endpoint must be implemented by exactly one service, as operator()(Endpoint, args...) with the
  * arguments of the endpoint (path parameters, then its parts in order, then the inherited parts) and
  * optionally the context last, returning the returns<> type or async of it.
  *

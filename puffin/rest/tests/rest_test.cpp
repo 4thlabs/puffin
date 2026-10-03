@@ -47,6 +47,10 @@ using api = rest::api<"", rest::api<"/users", remove_user>, rest::api<"/cards", 
 static_assert(call_info<find_endpoint_t<api, remove_card>>::name == "cards.remove");
 static_assert(call_info<find_endpoint_t<bank::v1, bank::users::get>>::name.empty());
 
+using unnamed = endpoint<DELETE, "/{id:int}">;
+using ambiguous = rest::api<"", rest::api<"/users", unnamed>, rest::api<"/cards", unnamed>>;
+static_assert(ambiguous::count<unnamed> == 2);
+
 struct users_service {
   std::vector<int>* removed;
   void operator()(remove_user, int id) { removed->push_back(id); }
@@ -56,75 +60,22 @@ struct cards_service {
   std::vector<int>* removed;
   void operator()(remove_card, int id) { removed->push_back(-id); }
 };
-
-// Without names: users::remove and cards::remove are one type, told apart by their domain
-namespace users {
-using remove = endpoint<DELETE, "/{id:int}">;
-using api = rest::api<"/users", remove>;
-} // namespace users
-
-namespace cards {
-using remove = endpoint<DELETE, "/{id:int}">;
-using api = rest::api<"/users/{user_id:int}/cards", remove>;
-} // namespace cards
-
-static_assert(std::is_same_v<users::remove, cards::remove>);
-
-using by_domain = rest::api<"/v1", users::api, cards::api>;
-static_assert(by_domain::count<users::remove> == 2);
-static_assert(find_endpoint_t<by_domain, users::remove, users::api>::path.view() == "/v1/users/{id:int}");
-static_assert(find_endpoint_t<by_domain, cards::remove, cards::api>::path.view() ==
-              "/v1/users/{user_id:int}/cards/{id:int}");
-
-struct users_domain {
-  std::vector<std::string>* removed;
-  void operator()(users::remove, int id) { removed->push_back("user " + std::to_string(id)); }
-};
-
-struct cards_domain {
-  std::vector<std::string>* removed;
-  void operator()(cards::remove, int user_id, int id)
-  {
-    removed->push_back("card " + std::to_string(id) + " of " + std::to_string(user_id));
-  }
-};
 } // namespace named
 
-TEST_CASE("Endpoints with the same shape", "[rest]")
+TEST_CASE("Named endpoints", "[rest]")
 {
-  SECTION("named")
-  {
-    std::vector<int> removed;
-    wk::basic_server<> server;
-    rest::mount<named::api>(server, named::users_service {&removed}, named::cards_service {&removed});
+  std::vector<int> removed;
+  wk::basic_server<> server;
+  rest::mount<named::api>(server, named::users_service {&removed}, named::cards_service {&removed});
 
-    rest::client<named::api, rest::local_transport<wk::basic_server<>>> api(server);
+  rest::client<named::api, rest::local_transport<wk::basic_server<>>> api(server);
 
-    pa::sync_wait([&]() -> pa::async<void> {
-      co_await api.call<named::remove_user>(1);
-      co_await api.call<named::remove_card>(2);
-    }());
+  pa::sync_wait([&]() -> pa::async<void> {
+    co_await api.call<named::remove_user>(1);
+    co_await api.call<named::remove_card>(2);
+  }());
 
-    REQUIRE(removed == std::vector<int> {1, -2});
-  }
-
-  SECTION("told apart by their domain")
-  {
-    std::vector<std::string> removed;
-    wk::basic_server<> server;
-    rest::mount<named::by_domain>(server, rest::serve<named::users::api>(named::users_domain {&removed}),
-                                  rest::serve<named::cards::api>(named::cards_domain {&removed}));
-
-    rest::client<named::by_domain, rest::local_transport<wk::basic_server<>>> api(server);
-
-    pa::sync_wait([&]() -> pa::async<void> {
-      co_await api.scope<named::users::api>().call<named::users::remove>(1);
-      co_await api.scope<named::cards::api>(7).call<named::cards::remove>(2);
-      co_await api.call<named::cards::remove, named::cards::api>(7, 3);
-    }());
-
-    REQUIRE(removed == std::vector<std::string> {"user 1", "card 2 of 7", "card 3 of 7"});
-  }
+  REQUIRE(removed == std::vector<int> {1, -2});
 }
 
 TEST_CASE("Path templates", "[rest]")
