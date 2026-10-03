@@ -41,6 +41,7 @@
 #include <puffin/webkit/middlewares/cookies.hpp>
 #include <puffin/webkit/middlewares/session.hpp>
 #include <puffin/webkit/server/server.hpp>
+#include <puffin/webkit/transport/reader.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <stdexcept>
@@ -109,6 +110,101 @@ std::vector<response> responses(std::string_view wire)
 }
 
 } // namespace
+
+TEST_CASE("Message reader", "[webkit][reader]")
+{
+  test::memory_stream stream; // Reads 7 bytes at a time
+  message_reader reader(16);
+  request_parser parser;
+
+  auto read = [&] { return sync_wait(reader.read(stream, parser)); };
+
+  SECTION("A message split over several reads, followed by a pipelined one")
+  {
+    stream.p->input = "GET /first HTTP/1.1\r\nHost: a\r\n\r\nGET /second HTTP/1.1\r\nHost: a\r\n\r\n";
+
+    REQUIRE(read() == parse_status::done);
+    REQUIRE(parser.release().target() == "/first");
+
+    REQUIRE(read() == parse_status::done);
+    REQUIRE(parser.release().target() == "/second");
+
+    REQUIRE(read() == parse_status::need_more);
+    REQUIRE(parser.idle());
+  }
+
+  SECTION("End of stream in the middle of a message leaves the parser as is")
+  {
+    stream.p->input = "GET /first HTTP/1.1\r\n";
+
+    REQUIRE(read() == parse_status::need_more);
+    REQUIRE_FALSE(parser.idle());
+  }
+
+  SECTION("Invalid message")
+  {
+    stream.p->input = "NOT HTTP\r\n\r\n";
+
+    REQUIRE(read() == parse_status::error);
+  }
+
+  SECTION("clear() drops the bytes kept for the next message")
+  {
+    stream.p->input = "GET /first HTTP/1.1\r\n\r\nGET /second HTTP/1.1\r\n\r\n";
+
+    REQUIRE(read() == parse_status::done);
+    parser.reset();
+    reader.clear();
+    stream.p->input.clear();
+
+    REQUIRE(read() == parse_status::need_more);
+    REQUIRE(parser.idle());
+  }
+}
+
+TEST_CASE("Keep-alive policy", "[webkit][server]")
+{
+  auto apply = [](request req, response& res) { return apply_keep_alive(req, res); };
+
+  SECTION("HTTP/1.1 is kept alive by default")
+  {
+    response res;
+    REQUIRE(apply(request("GET", "/"), res));
+    REQUIRE_FALSE(res.headers().contains("Connection"));
+  }
+
+  SECTION("Connection: close from the client")
+  {
+    request req("GET", "/");
+    req.headers().set("Connection", "close");
+    response res;
+
+    REQUIRE_FALSE(apply(std::move(req), res));
+    REQUIRE(res.headers().get("Connection") == "close");
+  }
+
+  SECTION("Connection: close from the handler")
+  {
+    response res;
+    res.headers().set("Connection", "close");
+
+    REQUIRE_FALSE(apply(request("GET", "/"), res));
+  }
+
+  SECTION("HTTP/1.0 is closed unless it asks for keep-alive, then it is told explicitly")
+  {
+    request req("GET", "/");
+    req.version(http_1_0);
+    response closed;
+    REQUIRE_FALSE(apply(req, closed));
+    REQUIRE(closed.headers().get("Connection") == "close");
+
+    req.headers().set("Connection", "keep-alive");
+    response kept;
+    REQUIRE(apply(req, kept));
+    REQUIRE(kept.headers().get("Connection") == "keep-alive");
+  }
+}
 
 TEST_CASE("Server over a stream", "[webkit][server]")
 {
