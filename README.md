@@ -70,7 +70,7 @@ int main(int argc, char** argv) {
 
 ### Async
 
-C++20 coroutines, independent of any event loop (`puffin::async`, header only).
+C++20 coroutines, independent of any event loop (`puffin::async`, header only), with asio and Qt adapters.
 
 ```c++
 #include <puffin/async.hpp>
@@ -88,39 +88,16 @@ int main() {
   thread_executor executor;
   executor.run(false); // pump on an owned thread
 
-  co_spawn(executor, twice(), [](std::exception_ptr ex, int value) { /* ... */ });
   return sync_wait(executor, twice()) == 84 ? 0 : 1;
 }
 ```
 
-- `async<T>`: lazy task, started when awaited, on the executor of the awaiting coroutine.
-- `any_executor`: type erased executor (anything with `post(std::coroutine_handle<>)`). An lvalue is
-  referenced, an rvalue is owned.
-- `co_spawn(executor, task_or_factory, completion)`: starts a detached task. `completion` takes
-  `(std::exception_ptr)` or `(std::exception_ptr, T)`. The default (`detached`) silently drops
-  exceptions, and a throwing completion calls `std::terminate`.
-- `sync_wait`, `when_all` (variadic or `std::vector`), `schedule_on(executor)`, `this_executor`.
-- `from_callback<Args...>(initiate)`: awaits any callback based operation, the coroutine resumes on
-  its own executor.
-- Executors: `thread_executor`, `inline_executor`.
-
-Adapters, built when their dependency is found:
-
-- `puffin::async_asio` (`<puffin/async/adapter/asio.hpp>`, standalone asio or Boost.Asio with
-  `PUFFIN_ASYNC_USE_BOOST_ASIO`): `asio::executor { io_context }`, the `asio::use_async` /
-  `asio::use_async_tuple` completion tokens, `asio::sleep_for`.
-
-  ```c++
-  std::size_t n = co_await socket.async_read_some(buffer, puffin::async::asio::use_async);
-  ```
-
-- `puffin::async_qt` (`<puffin/async/adapter/qt.hpp>`, Qt 6): `qt::executor { context_object }`,
-  `co_await qt::signal(sender, &Sender::signal)`, `qt::sleep_for`.
+Full documentation: [puffin/async/README.md](puffin/async/README.md).
 
 ### Webkit
 
-HTTP/1.1 server and client on top of `puffin::async` (`puffin::webkit`, header only). The HTTP
-core has no I/O, transports come from adapters.
+HTTP/1.1 server and client on top of `puffin::async` (`puffin::webkit`, header only). The HTTP core has no I/O,
+transports come from asio (TCP, TLS) and Qt adapters.
 
 ```c++
 #include <puffin/webkit.hpp>
@@ -130,8 +107,6 @@ namespace pa = puffin::async;
 namespace wk = puffin::webkit;
 
 wk::basic_server<wk::middlewares::cookies, wk::middlewares::session> server;
-
-server.get("/hello", [](auto& ctx) { ctx.response().body("hello", "text/plain"); });
 
 server.get("/users/([0-9]+)", [](auto& ctx) -> pa::async<void> {
   ctx.response().body(co_await load_user(ctx.param(0)), "application/json");
@@ -144,37 +119,30 @@ pa::co_spawn(pa::asio::executor { io }, server.listen(acceptor));
 io.run();
 ```
 
+Full documentation: [puffin/webkit/README.md](puffin/webkit/README.md).
+
+### Imdb
+
+A small in-memory database queried with a fluent request (`puffin::imdb`, header only), with views, indexes and
+nlohmann JSON helpers.
+
 ```c++
-wk::basic_client client(wk::asio::tcp_connector { io }, "example.com", 80);
-wk::response res = co_await client.get("/index.html");
+#include <puffin/imdb.hpp>
+#include <puffin/imdb/json/nlohmann.hpp>
+
+using namespace puffin::imdb;
+
+in_memory_database<std::string, json> db;
+db.insert("cards", R"({ "number": 1, "title": "My Title" })"_json);
+
+auto cards = db.select()
+               .from("cards")
+               .where(json_search { .key = "title", .text = "My" })
+               .order_by(json_sort { .key = "number" })
+               .execute();
 ```
 
-- `request` / `response`: plain HTTP messages, shared by the server and the client.
-- `request_parser` / `response_parser`: incremental parsers (Content-Length, chunked, pipelining,
-  size limits), `serialize()` for the wire format.
-- `basic_server<Middlewares...>`: regex routes, handlers returning `void` or `async<void>`, 404,
-  405, HEAD, keep-alive. Handlers get a `basic_context<Middlewares...>` that each middleware
-  extends with its `data_type` (`ctx.cookies()`, `ctx.set_cookie()`, `ctx.session()`).
-- Middlewares define optional `before(ctx)` (returning `false` stops the request) and `after(ctx)`.
-- The session cookie is signed with HMAC-SHA256 together with its name and an expiry checked by the
-  server (`max_age` after the last change). Set `session::options::secret` (32 bytes or more) to keep
-  sessions across restarts and instances, a random key is used otherwise. Its content is readable by
-  the client. Cookie names, values, path and domain are validated when building `Set-Cookie`.
-- Routes match the raw path, percent-encoded characters are not decoded before matching.
-- Header names and values, methods, targets and reason phrases are validated: CR, LF and NUL throw
-  `std::invalid_argument`. See [the roadmap](docs/roadmap.md) for what is missing.
-- `basic_client<Connector>`: one host, kept alive connection, idempotent requests retried once on
-  a stale connection.
-- Transports implement the `Stream`, `Acceptor` and `Connector` concepts.
-
-Adapters, built when their dependency is found:
-
-- `puffin::webkit_asio` (`<puffin/webkit/adapter/asio.hpp>`): `asio::tcp_stream`, `asio::tcp_acceptor`,
-  `asio::tcp_connector`.
-- `puffin::webkit_asio_ssl` (`<puffin/webkit/adapter/asio_ssl.hpp>`, OpenSSL): `asio::tls_acceptor`,
-  `asio::tls_connector` (SNI and host name verification).
-- `puffin::webkit_qt` (`<puffin/webkit/adapter/qt.hpp>`, Qt 6 Network): `qt::tcp_stream`,
-  `qt::tcp_acceptor`, `qt::tcp_connector`, used with `puffin::async::qt::executor`.
+Full documentation: [puffin/imdb/README.md](puffin/imdb/README.md).
 
 ### Ioc
 ### Maths
