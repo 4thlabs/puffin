@@ -51,6 +51,7 @@
 - [x] Session middleware, signed with HMAC-SHA256, expiry checked by the server
 - [x] Set-Cookie validation (no attribute injection)
 - [x] Coroutine server and client on `puffin::async`
+- [x] Server split into facade, connection and shared message reader
 - [x] asio adapter, TCP and TLS (OpenSSL)
 - [x] Qt adapter, TCP
 - [ ] Read, idle and request timeouts
@@ -65,4 +66,10 @@
 - [ ] Async middlewares
 - [ ] Concurrent client requests (connection pool)
 - [ ] Qt TLS (QSslSocket)
+- [ ] Split `parse_start_line()` and `start_body()` of the parser (clang-tidy exemptions today)
 - [ ] REST DSL (`puffin::rest`), in progress
+
+## Tooling
+
+- [x] clang-tidy in CI (function size and complexity) on async and webkit
+- [ ] Self-contained headers in common, events, ioc, imdb and maths, then check them with clang-tidy too

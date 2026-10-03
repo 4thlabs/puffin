@@ -275,7 +275,8 @@ private:
     return version{s[5] - '0', s[7] - '0'};
   }
 
-  bool parse_start_line()
+  // TODO: Split request and response handling, see docs/roadmap.md
+  bool parse_start_line() // NOLINT(readability-function-size,readability-function-cognitive-complexity)
   {
     auto line = next_line(true);
 
@@ -385,7 +386,8 @@ private:
     return start_body();
   }
 
-  bool start_body()
+  // TODO: Split request and response framing, see docs/roadmap.md
+  bool start_body() // NOLINT(readability-function-size,readability-function-cognitive-complexity)
   {
     const auto& h = message_.headers();
 

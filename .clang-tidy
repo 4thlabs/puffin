@@ -1,0 +1,8 @@
+# Code quality checks, run in CI by tools/clang-tidy.sh. See CLAUDE.md.
+Checks: '-*,readability-function-size,readability-function-cognitive-complexity'
+WarningsAsErrors: '*'
+HeaderFilterRegex: 'puffin/.*/include/puffin/.*'
+CheckOptions:
+  readability-function-size.LineThreshold: 40
+  readability-function-cognitive-complexity.Threshold: 15
+  readability-function-cognitive-complexity.IgnoreMacros: true
