@@ -140,18 +140,6 @@ struct returns : detail::part_tag {
   using codec = C;
 };
 
-/**
- * @brief Names an endpoint: shown to interceptors (call_info::name) and needed to tell apart two endpoints
- *        with the same shape, which would otherwise be the same type:
- *
- *   using remove_user = endpoint<DELETE, "/{id:int}", name<"users.remove">>;
- *   using remove_card = endpoint<DELETE, "/{id:int}", name<"cards.remove">>;
- */
-template<fixed_string Name>
-struct name : detail::part_tag {
-  static constexpr auto value = Name;
-};
-
 //
 // Security schemes, checked by the server validators and filled by the client interceptors. They are not
 // part of the handler and call signatures.
@@ -206,12 +194,6 @@ template<typename T, typename C>
 struct is_body<body<T, C>> : std::true_type {};
 
 template<typename T>
-struct is_name : std::false_type {};
-
-template<fixed_string N>
-struct is_name<name<N>> : std::true_type {};
-
-template<typename T>
 struct is_security : std::false_type {};
 
 template<typename... S>
@@ -243,23 +225,26 @@ struct first_or<typelist<T, Ts...>, Default> {
 } // namespace detail
 
 /**
- * @brief An endpoint: method, path template relative to its api, and parts (query, header, body, returns,
- *        security, name).
+ * @brief An endpoint: name, method, path template relative to its api, and parts (query, header, body,
+ *        returns, security).
  *
- *   using get_user = endpoint<GET, "/users/{id:int}", returns<user>>;
+ *   using get = endpoint<"users.get", GET, "/{id:int}", returns<user>>;
  *
- * The endpoint type is its identity (service dispatch, client::call): two endpoints with the same shape in one
- * api are rejected at compile time, give them a name<> to tell them apart.
+ * The name makes the endpoint type unique, the type being its identity (service dispatch, client::call): two
+ * endpoints with the same method and path in different domains stay distinct. Names must be unique in an api,
+ * checked at compile time. They are also given to the interceptors (call_info::name).
  */
-template<http_method M, fixed_string Path, typename... Parts>
+template<fixed_string Name, http_method M, fixed_string Path, typename... Parts>
 struct endpoint : detail::endpoint_tag {
+  static_assert(Name.size() > 0, "endpoint name must not be empty");
+
   static_assert((detail::is_part<Parts>::value && ...),
                 "endpoint parts must be query<>, header<>, body<>, returns<> or security<>");
   static_assert(detail::filter_t<detail::is_body, detail::typelist<Parts...>>::size <= 1, "more than one body<>");
   static_assert(detail::filter_t<detail::is_returns, detail::typelist<Parts...>>::size <= 1,
                 "more than one returns<>");
-  static_assert(detail::filter_t<detail::is_name, detail::typelist<Parts...>>::size <= 1, "more than one name<>");
 
+  static constexpr auto name = Name;
   static constexpr http_method method = M;
   static constexpr auto path = Path;
   using parts = detail::typelist<Parts...>;
@@ -273,7 +258,6 @@ struct with : detail::with_tag {
 
   static_assert(detail::filter_t<detail::is_returns, parts>::size == 0, "returns<> cannot be shared with with<>");
   static_assert(detail::filter_t<detail::is_body, parts>::size == 0, "body<> cannot be shared with with<>");
-  static_assert(detail::filter_t<detail::is_name, parts>::size == 0, "name<> cannot be shared with with<>");
 };
 
 /// A path parameter, the I-th of the full path of an endpoint
@@ -301,10 +285,7 @@ struct resolved {
   using parts = detail::concat_t<typename E::parts, Inherited>;
   using returns = typename detail::first_or<detail::filter_t<detail::is_returns, typename E::parts>, rest::returns<>>::type;
   using result_type = typename returns::value_type;
-
-  /// The name<> of the endpoint, empty if it has none
-  static constexpr std::string_view name =
-      detail::first_or<detail::filter_t<detail::is_name, typename E::parts>, rest::name<"">>::type::value.view();
+  static constexpr std::string_view name = E::name.view();
   using schemes = typename detail::schemes_of<detail::filter_t<detail::is_security, parts>>::type;
 
 private:
@@ -374,15 +355,31 @@ struct api : detail::api_tag {
 
   template<typename E>
   static constexpr bool contains = count<E> > 0;
+
+private:
+  template<typename... Rs>
+  static constexpr bool unique_names(detail::typelist<Rs...>)
+  {
+    constexpr std::string_view names[] = {std::string_view(), Rs::name...};
+
+    for (std::size_t i = 1; i < sizeof(names) / sizeof(names[0]); ++i) {
+      for (std::size_t j = 1; j < i; ++j) {
+        if (names[i] == names[j])
+          return false;
+      }
+    }
+
+    return true;
+  }
+
+  static_assert(unique_names(endpoints {}), "two endpoints of the api have the same name");
 };
 
 /// The resolved<> of endpoint E in Api
 template<typename Api, typename E>
 struct find_endpoint {
   static_assert(Api::template count<E> != 0, "this endpoint is not part of the api");
-  static_assert(Api::template count<E> < 2,
-                "this endpoint appears several times in the api: endpoints with the same method, path and parts "
-                "are the same type, add a name<\"...\"> to tell them apart");
+  static_assert(Api::template count<E> < 2, "this endpoint appears several times in the api");
 
   using type = detail::at_t<0, detail::filter_t<detail::is_resolved_for<E>::template pred, typename Api::endpoints>>;
 };

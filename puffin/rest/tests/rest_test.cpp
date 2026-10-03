@@ -36,46 +36,52 @@ static_assert(rest::path_template<"/a/{x}/{y:bool}">::param_name(1) == "y");
 namespace named {
 using namespace puffin::rest;
 
-// Same shape: the same type, unless named
-static_assert(std::is_same_v<endpoint<DELETE, "/{id:int}">, endpoint<DELETE, "/{id:int}">>);
+// Same method and path in two domains: distinct types thanks to their name
+namespace users {
+using remove = endpoint<"users.remove", DELETE, "/{id:int}">;
+using api = rest::api<"/users", remove>;
+} // namespace users
 
-using remove_user = endpoint<DELETE, "/{id:int}", name<"users.remove">>;
-using remove_card = endpoint<DELETE, "/{id:int}", name<"cards.remove">>;
-static_assert(!std::is_same_v<remove_user, remove_card>);
+namespace cards {
+using remove = endpoint<"cards.remove", DELETE, "/{id:int}">;
+using api = rest::api<"/users/{user_id:int}/cards", remove>;
+} // namespace cards
 
-using api = rest::api<"", rest::api<"/users", remove_user>, rest::api<"/cards", remove_card>>;
-static_assert(call_info<find_endpoint_t<api, remove_card>>::name == "cards.remove");
-static_assert(call_info<find_endpoint_t<bank::v1, bank::users::get>>::name.empty());
+static_assert(!std::is_same_v<users::remove, cards::remove>);
 
-using unnamed = endpoint<DELETE, "/{id:int}">;
-using ambiguous = rest::api<"", rest::api<"/users", unnamed>, rest::api<"/cards", unnamed>>;
-static_assert(ambiguous::count<unnamed> == 2);
+using api = rest::api<"/v1", users::api, cards::api>;
+static_assert(find_endpoint_t<api, cards::remove>::path.view() == "/v1/users/{user_id:int}/cards/{id:int}");
+static_assert(call_info<find_endpoint_t<api, cards::remove>>::name == "cards.remove");
+static_assert(call_info<find_endpoint_t<bank::v1, bank::users::get>>::name == "users.get");
 
 struct users_service {
-  std::vector<int>* removed;
-  void operator()(remove_user, int id) { removed->push_back(id); }
+  std::vector<std::string>* removed;
+  void operator()(users::remove, int id) { removed->push_back("user " + std::to_string(id)); }
 };
 
 struct cards_service {
-  std::vector<int>* removed;
-  void operator()(remove_card, int id) { removed->push_back(-id); }
+  std::vector<std::string>* removed;
+  void operator()(cards::remove, int user_id, int id)
+  {
+    removed->push_back("card " + std::to_string(id) + " of " + std::to_string(user_id));
+  }
 };
 } // namespace named
 
-TEST_CASE("Named endpoints", "[rest]")
+TEST_CASE("Endpoints with the same method and path", "[rest]")
 {
-  std::vector<int> removed;
+  std::vector<std::string> removed;
   wk::basic_server<> server;
   rest::mount<named::api>(server, named::users_service {&removed}, named::cards_service {&removed});
 
   rest::client<named::api, rest::local_transport<wk::basic_server<>>> api(server);
 
   pa::sync_wait([&]() -> pa::async<void> {
-    co_await api.call<named::remove_user>(1);
-    co_await api.call<named::remove_card>(2);
+    co_await api.call<named::users::remove>(1);
+    co_await api.call<named::cards::remove>(7, 2);
   }());
 
-  REQUIRE(removed == std::vector<int> {1, -2});
+  REQUIRE(removed == std::vector<std::string> {"user 1", "card 2 of 7"});
 }
 
 TEST_CASE("Path templates", "[rest]")

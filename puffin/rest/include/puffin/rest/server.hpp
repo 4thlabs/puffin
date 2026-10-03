@@ -570,8 +570,7 @@ void register_routes(Server& server, const std::shared_ptr<State>& state, typeli
   using context_type = typename Server::context_type;
 
   static_assert(((Api::template count<typename Rs::endpoint> == 1) && ...),
-                "an endpoint appears several times in the api: endpoints with the same method, path and parts are "
-                "the same type, add a name<\"...\"> to tell them apart");
+                "an endpoint appears several times in the api");
 
   (server.route(std::string(method_name(Rs::method)), Rs::path_type::regex(),
                 [state](context_type& ctx) { return State::template handle<Rs>(state, ctx); }),

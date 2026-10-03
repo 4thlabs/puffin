@@ -70,8 +70,8 @@ namespace rest = puffin::rest;
 namespace auth {
 using namespace puffin::rest;
 
-using login = endpoint<POST, "/login", body<credentials>, returns<token>>;
-using me = endpoint<GET, "/me", security<bearer_auth>, returns<user>>;
+using login = endpoint<"auth.login", POST, "/login", body<credentials>, returns<token>>;
+using me = endpoint<"auth.me", GET, "/me", security<bearer_auth>, returns<user>>;
 
 using api = rest::api<"/auth", login, me>;
 } // namespace auth
@@ -79,11 +79,11 @@ using api = rest::api<"/auth", login, me>;
 namespace users {
 using namespace puffin::rest;
 
-using list = endpoint<GET, "/", query<"limit", std::optional<int>>, query<"name", std::optional<std::string>>,
-                     returns<std::vector<user>>>;
-using get = endpoint<GET, "/{id:int}", returns<user>>;
-using create = endpoint<POST, "/", body<new_user>, returns<user, status::created>>;
-using remove = endpoint<DELETE, "/{id:int}">;
+using list = endpoint<"users.list", GET, "/", query<"limit", std::optional<int>>,
+                     query<"name", std::optional<std::string>>, returns<std::vector<user>>>;
+using get = endpoint<"users.get", GET, "/{id:int}", returns<user>>;
+using create = endpoint<"users.create", POST, "/", body<new_user>, returns<user, status::created>>;
+using remove = endpoint<"users.remove", DELETE, "/{id:int}">;
 
 using api = rest::api<"/users", list, get, create, remove>;
 } // namespace users
@@ -91,9 +91,10 @@ using api = rest::api<"/users", list, get, create, remove>;
 namespace cards {
 using namespace puffin::rest;
 
-using list = endpoint<GET, "/", query<"status", std::optional<card_status>>, returns<std::vector<card>>>;
-using issue = endpoint<POST, "/", body<new_card>, returns<card, status::created>>;
-using freeze = endpoint<POST, "/{card_id:int}/freeze", returns<card>>;
+using list = endpoint<"cards.list", GET, "/", query<"status", std::optional<card_status>>,
+                     returns<std::vector<card>>>;
+using issue = endpoint<"cards.issue", POST, "/", body<new_card>, returns<card, status::created>>;
+using freeze = endpoint<"cards.freeze", POST, "/{card_id:int}/freeze", returns<card>>;
 
 using api = rest::api<"/users/{user_id:int}/cards", list, issue, freeze>;
 } // namespace cards
