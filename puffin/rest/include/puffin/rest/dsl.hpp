@@ -291,9 +291,12 @@ struct path_arg : detail::arg_tag {
  * Arguments of the handlers and of client::call, in order: path parameters, then the endpoint parts in
  * declaration order, then the inherited parts.
  */
-template<typename E, fixed_string Path, typename Inherited>
+template<typename E, fixed_string Path, typename Inherited, typename Origins = detail::typelist<>>
 struct resolved {
   using endpoint = E;
+
+  /// The api<> types the endpoint is nested in, outermost first (scope<> and serve<> lookups)
+  using origins = Origins;
   static constexpr http_method method = E::method;
   static constexpr auto path = Path;
   using path_type = path_template<Path>;
@@ -322,36 +325,40 @@ public:
 
 namespace detail {
 
-template<fixed_string Prefix, typename Inherited, typename Node, typename Kind = void>
+template<fixed_string Prefix, typename Inherited, typename Origins, typename Node, typename Kind = void>
 struct flatten;
 
-template<fixed_string Prefix, typename Inherited, typename Children>
+template<fixed_string Prefix, typename Inherited, typename Origins, typename Children>
 struct flatten_children;
 
-template<fixed_string Prefix, typename Inherited, typename... Children>
-struct flatten_children<Prefix, Inherited, typelist<Children...>> {
-  using type = concat_t<typename flatten<Prefix, Inherited, Children>::type...>;
+template<fixed_string Prefix, typename Inherited, typename Origins, typename... Children>
+struct flatten_children<Prefix, Inherited, Origins, typelist<Children...>> {
+  using type = concat_t<typename flatten<Prefix, Inherited, Origins, Children>::type...>;
 };
 
-template<fixed_string Prefix, typename Inherited, typename Node>
-struct flatten<Prefix, Inherited, Node, std::enable_if_t<std::is_base_of_v<endpoint_tag, Node>>> {
-  using type = typelist<resolved<Node, join_path<Prefix, Node::path>, Inherited>>;
+template<fixed_string Prefix, typename Inherited, typename Origins, typename Node>
+struct flatten<Prefix, Inherited, Origins, Node, std::enable_if_t<std::is_base_of_v<endpoint_tag, Node>>> {
+  using type = typelist<resolved<Node, join_path<Prefix, Node::path>, Inherited, Origins>>;
 };
 
-template<fixed_string Prefix, typename Inherited, typename Node>
-struct flatten<Prefix, Inherited, Node, std::enable_if_t<std::is_base_of_v<api_tag, Node>>> {
-  using type = typename flatten_children<join_path<Prefix, Node::prefix>, Inherited, typename Node::children>::type;
+template<fixed_string Prefix, typename Inherited, typename Origins, typename Node>
+struct flatten<Prefix, Inherited, Origins, Node, std::enable_if_t<std::is_base_of_v<api_tag, Node>>> {
+  using type = typename flatten_children<join_path<Prefix, Node::prefix>, Inherited, concat_t<Origins, typelist<Node>>,
+                                         typename Node::children>::type;
 };
 
-template<fixed_string Prefix, typename Inherited, typename Node>
-struct flatten<Prefix, Inherited, Node, std::enable_if_t<std::is_base_of_v<with_tag, Node>>> {
-  using type = typename flatten_children<Prefix, concat_t<Inherited, typename Node::parts>, typename Node::children>::type;
+template<fixed_string Prefix, typename Inherited, typename Origins, typename Node>
+struct flatten<Prefix, Inherited, Origins, Node, std::enable_if_t<std::is_base_of_v<with_tag, Node>>> {
+  using type = typename flatten_children<Prefix, concat_t<Inherited, typename Node::parts>, Origins,
+                                         typename Node::children>::type;
 };
 
-template<typename E>
+/// Matches the resolved<> of endpoint E nested in Scope (anywhere when Scope is void)
+template<typename E, typename Scope = void>
 struct is_resolved_for {
   template<typename R>
-  struct pred : std::is_same<typename R::endpoint, E> {};
+  struct pred : std::bool_constant<std::is_same_v<typename R::endpoint, E> &&
+                                   (std::is_void_v<Scope> || contains_v<Scope, typename R::origins>)> {};
 };
 
 } // namespace detail
@@ -367,7 +374,8 @@ struct api : detail::api_tag {
   using children = detail::typelist<Children...>;
 
   /// Every endpoint of the api, as resolved<>
-  using endpoints = typename detail::flatten_children<join_path<"", Prefix>, detail::typelist<>, children>::type;
+  using endpoints =
+      typename detail::flatten_children<join_path<"", Prefix>, detail::typelist<>, detail::typelist<>, children>::type;
 
   template<typename E>
   static constexpr std::size_t count = detail::filter_t<detail::is_resolved_for<E>::template pred, endpoints>::size;
@@ -376,19 +384,28 @@ struct api : detail::api_tag {
   static constexpr bool contains = count<E> > 0;
 };
 
-/// The resolved<> of endpoint E in Api
-template<typename Api, typename E>
+/**
+ * @brief The resolved<> of endpoint E in Api, looked up in the part Scope of the api when given.
+ *
+ * Endpoints with the same method, path and parts are the same type: when such an endpoint appears in several
+ * domains (users::remove and cards::remove both "DELETE /{id:int}"), the domain tells them apart.
+ */
+template<typename Api, typename E, typename Scope = Api>
 struct find_endpoint {
-  static_assert(Api::template count<E> != 0, "this endpoint is not part of the api");
-  static_assert(Api::template count<E> < 2,
-                "this endpoint appears several times in the api: endpoints with the same method, path and parts "
-                "are the same type, add a name<\"...\"> to tell them apart");
+  using scope_filter = std::conditional_t<std::is_same_v<Scope, Api>, void, Scope>;
+  using matches = detail::filter_t<detail::is_resolved_for<E, scope_filter>::template pred, typename Api::endpoints>;
 
-  using type = detail::at_t<0, detail::filter_t<detail::is_resolved_for<E>::template pred, typename Api::endpoints>>;
+  static_assert(matches::size != 0, "this endpoint is not part of the api (or of the scope)");
+  static_assert(matches::size < 2,
+                "this endpoint appears in several domains of the api (same method, path and parts make the same "
+                "type): look it up in its domain, client.scope<domain::api>().call<E>() and "
+                "rest::serve<domain::api>(service), or give it a name<\"...\">");
+
+  using type = detail::at_t<0, matches>;
 };
 
-template<typename Api, typename E>
-using find_endpoint_t = typename find_endpoint<Api, E>::type;
+template<typename Api, typename E, typename Scope = Api>
+using find_endpoint_t = typename find_endpoint<Api, E, Scope>::type;
 
 /**
  * @brief Static information on the endpoint being called, given to the interceptors

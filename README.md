@@ -221,8 +221,11 @@ rest::result<user> r = co_await api.try_call<users::get>(7); // errors as values
 
 - Path parameters `{name:type}`: `int`, `int64`, `uint`, `uint64`, `double`, `bool`, `string`
   (default), `path` (rest of the path). Parsed at compile time.
-- Endpoints are identified by their type: two with the same method, path and parts in one api are
-  rejected at compile time, `name<"users.remove">` tells them apart (and names them for interceptors).
+- Endpoints are identified by their type, so two with the same method, path and parts are one type
+  (`users::remove` and `cards::remove` as `endpoint<DELETE, "/{id:int}">`). Their domain tells them
+  apart: `client.scope<cards::api>(user_id).call<cards::remove>(id)` and
+  `rest::mount<v1>(server, rest::serve<users::api>(users_service{}), rest::serve<cards::api>(cards_service{}))`.
+  `name<"cards.remove">` also makes them distinct types, and names them for interceptors.
 - Parts: `query<"name", T>` (`optional<T>`, `vector<T>`), `header<"Name", T>`, `body<T, Codec>`,
   `returns<T, status, Codec>`, `security<api_key<"Header">, api_key_query<"param">, bearer_auth>`.
 - Arguments, server and client alike: path parameters, the endpoint parts in order, then the parts

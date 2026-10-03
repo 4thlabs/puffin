@@ -179,8 +179,8 @@ public:
 
   static_assert(Transport<transport_type>, "client needs a Transport or a webkit Connector");
 
-  template<typename E>
-  using result_type = typename find_endpoint_t<Api, E>::result_type;
+  template<typename E, typename Scope = Api>
+  using result_type = typename find_endpoint_t<Api, E, Scope>::result_type;
 
   /// Arguments are given to the transport (for a Connector: the connector, host and port)
   template<typename... A>
@@ -203,27 +203,28 @@ public:
     return std::get<I>(interceptors_);
   }
 
-  /// Calls endpoint E, throws http_error if the response is not 2xx
-  template<typename E, typename... A>
-  async::async<result_type<E>> call(A&&... args)
+  /// Calls endpoint E (looked up in the part Scope of the api), throws http_error if the response is not 2xx
+  template<typename E, typename Scope = Api, typename... A>
+  async::async<result_type<E, Scope>> call(A&&... args)
   {
-    using R = find_endpoint_t<Api, E>;
+    using R = find_endpoint_t<Api, E, Scope>;
     return send<R>(build_request<R>(std::forward<A>(args)...));
   }
 
   /// Calls endpoint E, an error status is returned instead of thrown (transport errors are still thrown)
-  template<typename E, typename... A>
-  async::async<result<result_type<E>>> try_call(A&&... args)
+  template<typename E, typename Scope = Api, typename... A>
+  async::async<result<result_type<E, Scope>>> try_call(A&&... args)
   {
-    using R = find_endpoint_t<Api, E>;
+    using R = find_endpoint_t<Api, E, Scope>;
     return try_send<R>(build_request<R>(std::forward<A>(args)...));
   }
 
   /**
-   * @brief A view on a part of the api with its leading arguments fixed:
+   * @brief A view on a part of the api, endpoints are looked up there, with its leading arguments fixed:
    *
    *   auto ada_cards = api.scope<bank::cards::api>(ada.id);
    *   auto all = co_await ada_cards.call<bank::cards::list>();
+   *   co_await api.scope<bank::users::api>().call<bank::users::remove>(id);
    */
   template<typename SubApi, typename... A>
   scoped_client<client, SubApi, std::decay_t<A>...> scope(A&&... fixed)
@@ -232,10 +233,10 @@ public:
   }
 
   /// The request call<E>(args...) would send, before interceptors
-  template<typename E, typename... A>
+  template<typename E, typename Scope = Api, typename... A>
   webkit::request make_request(A&&... args) const
   {
-    return build_request<find_endpoint_t<Api, E>>(std::forward<A>(args)...);
+    return build_request<find_endpoint_t<Api, E, Scope>>(std::forward<A>(args)...);
   }
 
 private:
@@ -389,19 +390,17 @@ public:
   template<typename E, typename... A>
   auto call(A&&... args)
   {
-    static_assert(Api::template contains<E>, "this endpoint is not part of the scope");
-
-    return std::apply([&](const Fixed&... fixed) { return parent_.template call<E>(fixed..., std::forward<A>(args)...); },
-                      fixed_);
+    return std::apply(
+        [&](const Fixed&... fixed) { return parent_.template call<E, Api>(fixed..., std::forward<A>(args)...); },
+        fixed_);
   }
 
   template<typename E, typename... A>
   auto try_call(A&&... args)
   {
-    static_assert(Api::template contains<E>, "this endpoint is not part of the scope");
-
     return std::apply(
-        [&](const Fixed&... fixed) { return parent_.template try_call<E>(fixed..., std::forward<A>(args)...); }, fixed_);
+        [&](const Fixed&... fixed) { return parent_.template try_call<E, Api>(fixed..., std::forward<A>(args)...); },
+        fixed_);
   }
 
 private:
