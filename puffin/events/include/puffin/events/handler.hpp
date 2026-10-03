@@ -37,7 +37,7 @@
 #ifndef PFN_HANDLER_HPP
 #define PFN_HANDLER_HPP
 
-namespace pfn {
+namespace puffin {
 namespace events {
 
 template<typename Event>

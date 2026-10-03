@@ -40,7 +40,7 @@
 #include <puffin/maths/matrix4.hpp>
 #include <puffin/maths/vector3.hpp>
 
-namespace pfn {
+namespace puffin::maths {
 
 ///
 /// Fov Y Perspective
@@ -82,7 +82,7 @@ basic_matrix4<T> rotate(const basic_matrix4<T>& m, const basic_vector3<T>& v)
   return res;
 }
 
-} // namespace pfn
+} // namespace puffin::maths
 
 
 #endif // PFN_MATHS_TRANSFORM

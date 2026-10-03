@@ -40,7 +40,7 @@
 #include <cmath> 
 #include <limits>
 
-namespace pfn
+namespace puffin::maths
 {
 
   template<typename T, typename std::enable_if_t<std::is_floating_point<T>::value, int> = 0>
@@ -50,7 +50,7 @@ namespace pfn
     return std::abs(a - b) <= std::numeric_limits<T>::epsilon() * max;
   }
 
-} // namespace pfn
+} // namespace puffin::maths
 
 
 #endif // PFN_MATHS_PRECISION

@@ -39,7 +39,7 @@
 
 #include <string>
 
-namespace pfn {
+namespace puffin::common {
 
 struct none_t {
   struct init_tag {};
