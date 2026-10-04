@@ -57,6 +57,7 @@
 - [x] Server split into facade, connection and shared message reader
 - [x] asio adapter, TCP and TLS (OpenSSL)
 - [x] Qt adapter, TCP
+- [x] `any_connector` and `any_stream`: type erased transport, runtime agnostic client code
 - [ ] Read, idle and request timeouts: on `async::sleep_for`, waiting for `when_any` and cancellation
 - [ ] Connection limit
 - [ ] Accept retry with backoff on resource errors (EMFILE)

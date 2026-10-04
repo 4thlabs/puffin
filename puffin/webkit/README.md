@@ -22,13 +22,11 @@ target_link_libraries(my_app PRIVATE puffin::webkit_asio)
 namespace pa = puffin::async;
 namespace wk = puffin::webkit;
 
-int main()
+using server_type = wk::basic_server<wk::middlewares::cookies, wk::middlewares::session>;
+
+// The application only uses puffin: it runs the same on asio or Qt
+void add_routes(server_type& server)
 {
-  ::asio::io_context io;
-  pa::asio::executor executor { io };
-
-  wk::basic_server<wk::middlewares::cookies, wk::middlewares::session> server;
-
   server.get("/", [](auto& ctx) { ctx.response().body("Hello\n", "text/plain"); });
 
   server.get("/visits", [](auto& ctx) {
@@ -41,6 +39,16 @@ int main()
     co_await pa::sleep_for(std::chrono::milliseconds(std::stoi(std::string(ctx.param(0)))));
     ctx.response().body("Waited\n", "text/plain");
   });
+}
+
+// main picks the runtime
+int main()
+{
+  ::asio::io_context io;
+  pa::asio::executor executor { io };
+
+  server_type server;
+  add_routes(server);
 
   wk::asio::tcp_acceptor acceptor(io, 8080);
   pa::co_spawn(executor, server.listen(acceptor));
@@ -234,7 +242,8 @@ handlers and middlewares must be thread safe.
 ## Client
 
 ```c++
-wk::basic_client client(wk::asio::tcp_connector { io }, "example.com", 80);
+// connector: any Connector, wk::asio::tcp_connector { io }, wk::qt::tcp_connector {}...
+wk::basic_client client(connector, "example.com", 80);
 
 wk::response res = co_await client.get("/index.html");
 if (res.status_code() == 200)
@@ -243,6 +252,10 @@ if (res.status_code() == 200)
 co_await client.post("/users", R"({"name":"puffin"})", "application/json");
 ```
 
+- `wk::any_connector` wraps any `Connector` (its streams being `wk::any_stream`), so that application code
+  holding a client does not depend on the runtime: `basic_client<wk::any_connector>` is built from
+  `wk::asio::tcp_connector { io }`, `wk::qt::tcp_connector {}`... One virtual call per read or write.
+  An `any_connector` is never empty: copies share the connector and moving copies.
 - One client talks to one host. The connection opens on the first request and is kept alive.
 - `get`, `post`, `put`, `del`, or `request(wk::request)` for full control. `Host` and `Connection` are filled when
   missing.
@@ -259,7 +272,7 @@ co_await client.post("/users", R"({"name":"puffin"})", "application/json");
 or `co_await next(req)`, several times if needed.
 
 ```c++
-wk::basic_client<wk::asio::tcp_connector, wk::interceptors::bearer, wk::interceptors::retry> client(connector, "example.com", 80);
+wk::basic_client<wk::any_connector, wk::interceptors::bearer, wk::interceptors::retry> client(connector, "example.com", 80);
 
 client.interceptor<wk::interceptors::bearer>().token(token);
 client.interceptor<wk::interceptors::bearer>().on_refresh([]() -> pa::async<std::string> { co_return co_await login(); });

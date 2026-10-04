@@ -49,6 +49,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace pa = puffin::async;
@@ -150,13 +151,26 @@ struct access_log {
 };
 
 //
-// Client side
+// Server side
 //
 
-pa::async<void> demo(::asio::io_context& io, std::uint16_t port)
+using server_type = wk::basic_server<access_log>;
+
+void mount_api(server_type& server)
 {
-  rest::client<v1, wk::asio::tcp_connector, wk::interceptors::retry> api(wk::asio::tcp_connector {io}, "127.0.0.1",
-                                                                         port);
+  rest::mount<v1>(server, notes_service {},
+                  rest::validators([](const rest::api_key_value& key) { return key.value == "secret-key"; }));
+}
+
+//
+// Client side, over any webkit Connector
+//
+
+using notes_client = rest::client<v1, wk::any_connector, wk::interceptors::retry>;
+
+pa::async<void> demo(wk::any_connector connector, std::uint16_t port)
+{
+  notes_client api(std::move(connector), "127.0.0.1", port);
   api.credentials<rest::api_key<"X-Api-Key">>("secret-key");
 
   std::cout << "ping: " << co_await api.call<health::ping>() << std::endl;
@@ -175,6 +189,7 @@ pa::async<void> demo(::asio::io_context& io, std::uint16_t port)
 
 // Serves the notes api, after a short demo of the client:
 //   curl -H 'X-Api-Key: secret-key' http://127.0.0.1:8080/api/v1/notes?tag=home
+// main picks the runtime, asio here: everything above only uses puffin.
 int main(int argc, char** argv)
 {
   std::uint16_t port = argc > 1 ? static_cast<std::uint16_t>(std::atoi(argv[1])) : 8080;
@@ -182,9 +197,8 @@ int main(int argc, char** argv)
   ::asio::io_context io;
   pa::asio::executor executor {io};
 
-  wk::basic_server<access_log> server;
-  rest::mount<v1>(server, notes_service {},
-                  rest::validators([](const rest::api_key_value& key) { return key.value == "secret-key"; }));
+  server_type server;
+  mount_api(server);
 
   wk::asio::tcp_acceptor acceptor(io, port);
   std::cout << "Listening on http://0.0.0.0:" << acceptor.port() << std::endl;
@@ -194,7 +208,7 @@ int main(int argc, char** argv)
       std::cerr << "Server stopped with an error" << std::endl;
   });
 
-  pa::co_spawn(executor, demo(io, acceptor.port()), [](std::exception_ptr e) {
+  pa::co_spawn(executor, demo(wk::asio::tcp_connector {io}, acceptor.port()), [](std::exception_ptr e) {
     if (e)
       std::cerr << "Demo failed" << std::endl;
   });

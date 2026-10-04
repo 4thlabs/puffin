@@ -51,17 +51,11 @@ namespace wk = puffin::webkit;
 
 using namespace std::chrono_literals;
 
-// Counts the visits of each client in its session cookie:
-//   curl -c jar -b jar http://127.0.0.1:8080/visits
-int main(int argc, char** argv)
+using server_type = wk::basic_server<wk::middlewares::cookies, wk::middlewares::session>;
+
+// The application, independent of the runtime: it only uses puffin
+void add_routes(server_type& server)
 {
-  std::uint16_t port = argc > 1 ? static_cast<std::uint16_t>(std::atoi(argv[1])) : 8080;
-
-  ::asio::io_context io;
-  pa::asio::executor executor{io};
-
-  wk::basic_server<wk::middlewares::cookies, wk::middlewares::session> server;
-
   server.get("/", [](auto& ctx) { ctx.response().body("Hello from puffin\n", "text/plain"); });
 
   server.get("/visits", [](auto& ctx) {
@@ -74,6 +68,20 @@ int main(int argc, char** argv)
     co_await pa::sleep_for(std::chrono::milliseconds(std::stoi(std::string(ctx.param(0)))));
     ctx.response().body("Waited\n", "text/plain");
   });
+}
+
+// Counts the visits of each client in its session cookie:
+//   curl -c jar -b jar http://127.0.0.1:8080/visits
+// main picks the runtime, asio here.
+int main(int argc, char** argv)
+{
+  std::uint16_t port = argc > 1 ? static_cast<std::uint16_t>(std::atoi(argv[1])) : 8080;
+
+  ::asio::io_context io;
+  pa::asio::executor executor{io};
+
+  server_type server;
+  add_routes(server);
 
   wk::asio::tcp_acceptor acceptor(io, port);
   std::cout << "Listening on http://0.0.0.0:" << acceptor.port() << std::endl;

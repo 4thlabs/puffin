@@ -63,6 +63,7 @@
 #include <puffin/webkit/middlewares/cookies.hpp>
 #include <puffin/webkit/middlewares/session.hpp>
 
+#include <puffin/webkit/transport/any.hpp>
 #include <puffin/webkit/transport/concepts.hpp>
 
 #endif // PUFFIN_WEBKIT_HPP

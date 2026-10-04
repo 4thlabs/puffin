@@ -92,20 +92,27 @@ middlewares of the server, then the security validators, argument decoding, the 
 ## Calling it
 
 ```c++
-#include <puffin/webkit/adapter/asio.hpp>
+// wk::any_connector: any webkit Connector, the runtime (asio, Qt...) is chosen by the caller
+pa::async<void> run(wk::any_connector connector)
+{
+  rest::client<v1, wk::any_connector, wk::interceptors::retry> api(std::move(connector), "host", 80);
+  api.credentials<rest::api_key<"X-Api-Key">>("...");
 
-rest::client<v1, wk::asio::tcp_connector, wk::interceptors::retry> api(connector, "host", 80);
-api.credentials<rest::api_key<"X-Api-Key">>("...");
+  user u = co_await api.call<users::get>(42);
+  auto page = co_await api.call<users::list>();                // trailing optionals may be omitted
+  rest::result<user> r = co_await api.try_call<users::get>(7); // errors as values instead of rest::http_error
 
-user u = co_await api.call<users::get>(42);
-auto page = co_await api.call<users::list>();                // trailing optionals may be omitted
-rest::result<user> r = co_await api.try_call<users::get>(7); // errors as values instead of rest::http_error
+  auto alice_cards = api.scope<cards::api>(1);                 // fixes user_id
+  co_await alice_cards.call<cards::remove>(3);
+}
 
-auto alice_cards = api.scope<cards::api>(1);                 // fixes user_id
-co_await alice_cards.call<cards::remove>(3);
+// The caller picks the runtime, asio here
+co_await run(wk::asio::tcp_connector {io});
 ```
 
-- The client runs over a webkit `Connector` (wrapped in a `webkit::basic_client`) or any `Transport`;
+- The client runs over a webkit `Connector` (wrapped in a `webkit::basic_client`) or any `Transport`.
+  `wk::any_connector` keeps application code independent of the runtime without making it a template (a client
+  templated on its connector needs `api.template call<E>()`);
   `local_transport` calls a server in process, for tests.
 - `credentials<Scheme>(value)` gives the value sent for a security scheme (`api_key<>`, `api_key_query<>`,
   `bearer_auth`), only to the endpoints declaring it.
