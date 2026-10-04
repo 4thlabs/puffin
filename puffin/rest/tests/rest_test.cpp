@@ -77,7 +77,7 @@ TEST_CASE("Endpoints with the same method and path", "[rest]")
   wk::basic_server<> server;
   rest::mount<named::api>(server, named::users_service {&removed}, named::cards_service {&removed});
 
-  rest::client<named::api, rest::local_transport<wk::basic_server<>>> api(server);
+  rest::client<named::api> api {rest::local_transport(server)};
 
   pa::sync_wait([&]() -> pa::async<void> {
     co_await api.call<named::users::remove>(1);
@@ -143,7 +143,7 @@ struct bank_fixture {
   }
 };
 
-using local_client = rest::client<bank::v1, rest::local_transport<server_type>>;
+using local_client = rest::client<bank::v1>;
 
 } // namespace
 
@@ -251,7 +251,7 @@ TEST_CASE("Server: requests, statuses and errors", "[rest]")
 TEST_CASE("Client: calls through a transport", "[rest]")
 {
   bank_fixture f;
-  local_client api(f.server);
+  local_client api {rest::local_transport(f.server)};
   api.credentials<rest::api_key<"X-Api-Key">>("k3y");
   api.headers().set("User-Agent", "bank-test");
 
@@ -317,7 +317,7 @@ TEST_CASE("Client: calls through a transport", "[rest]")
 TEST_CASE("Client: encoding errors come out of the task", "[rest]")
 {
   bank_fixture f;
-  local_client api(f.server);
+  local_client api {rest::local_transport(f.server)};
   api.credentials<rest::api_key<"X-Api-Key">>("k3y");
 
   // A header value with a line feed is rejected when the request is built, inside the task
@@ -331,7 +331,7 @@ TEST_CASE("Client: encoding errors come out of the task", "[rest]")
 TEST_CASE("Client: request building", "[rest]")
 {
   bank_fixture f;
-  local_client api(f.server);
+  local_client api {rest::local_transport(f.server)};
 
   wk::request req = api.make_request<bank::cards::list>(7, bank::card_status::frozen, "id 1");
   REQUIRE(req.method() == "GET");
@@ -414,9 +414,8 @@ TEST_CASE("Interceptors and middlewares", "[rest]")
     bank_fixture f;
     std::vector<std::string> log;
 
-    rest::client<bank::v1, rest::local_transport<server_type>, recorder, wk::interceptors::retry, flaky,
-                 wk::interceptors::bearer>
-        api(f.server);
+    rest::client<bank::v1, recorder, wk::interceptors::retry, flaky, wk::interceptors::bearer> api {
+        rest::local_transport(f.server)};
     api.interceptor<recorder>().log = &log;
     api.credentials<rest::api_key<"X-Api-Key">>("k3y");
 
@@ -463,7 +462,7 @@ TEST_CASE("Interceptors and middlewares", "[rest]")
     rest::mount<bank::v1>(server, bank::auth_service {db}, bank::users_service {db}, bank::cards_service {db},
                           rest::validators(bank::api_key_validator {"k3y"}, bank::bearer_validator {}));
 
-    rest::client<bank::v1, rest::local_transport<decltype(server)>> api(server);
+    rest::client<bank::v1> api {rest::local_transport(server)};
 
     pa::sync_wait([&]() -> pa::async<void> {
       auto r6 = co_await api.try_call<bank::users::list>();
@@ -498,7 +497,7 @@ using api = rest::api<"", header_key, query_key, authorization_key, token, open>
 TEST_CASE("Client credentials", "[rest]")
 {
   bank_fixture f;
-  rest::client<creds::api, rest::local_transport<server_type>> api(f.server);
+  rest::client<creds::api> api {rest::local_transport(f.server)};
   api.credentials<rest::api_key<"key">>("in header");
   api.credentials<rest::api_key_query<"key">>("in query");
   api.credentials<rest::api_key<"Authorization">>("raw");
@@ -513,4 +512,17 @@ TEST_CASE("Client credentials", "[rest]")
   REQUIRE_FALSE(open.headers().contains("key"));
   REQUIRE_FALSE(open.headers().contains("Authorization"));
   REQUIRE(open.target() == "/o");
+}
+
+TEST_CASE("any_transport", "[rest][client]")
+{
+  wk::basic_server<> server;
+  server.get("/", [](auto& ctx) { ctx.response().body("hi"); });
+
+  rest::any_transport transport {rest::local_transport(server)};
+  REQUIRE(pa::sync_wait(transport.request(wk::request("GET", "/"))).body() == "hi");
+
+  rest::any_transport other(std::move(transport));
+  REQUIRE(pa::sync_wait(other.request(wk::request("GET", "/"))).body() == "hi");
+  REQUIRE_THROWS_AS(transport.request(wk::request("GET", "/")), std::logic_error);
 }

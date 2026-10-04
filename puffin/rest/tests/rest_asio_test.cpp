@@ -35,9 +35,8 @@ TEST_CASE("Rest api over asio", "[rest][asio]")
   std::thread io_thread([&] { io.run_for(20s); });
 
   auto scenario = [&]() -> pa::async<bank::card> {
-    // A Connector: the client wraps it in a webkit::basic_client
-    rest::client<bank::v1, wk::asio::tcp_connector> api(wk::asio::tcp_connector {io},
-                                                                                  "127.0.0.1", acceptor.port());
+    // A Connector: the client wraps it in a webkit::basic_client<any_connector>
+    rest::client<bank::v1> api(wk::asio::tcp_connector {io}, "127.0.0.1", acceptor.port());
     api.credentials<rest::api_key<"X-Api-Key">>("k3y");
 
     bank::user ada = co_await api.call<bank::users::create>(bank::new_user {"Ada", "ada@bank.io"});

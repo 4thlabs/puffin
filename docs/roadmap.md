@@ -78,7 +78,7 @@
 - [x] Security schemes: api key (header, query), bearer
 - [x] Server: `mount` with compile-time checked services and validators, routes named after endpoints, automatic
   400, 401, 415, 204, error codecs
-- [x] Client: `call`, `try_call`, `scope`, `credentials`, webkit interceptors
+- [x] Client: `call`, `try_call`, `scope`, `credentials`, webkit interceptors, transport type erased (`any_transport`)
 - [x] Codecs (text, JSON with nlohmann), `param_traits`, `enum_param`, `local_transport`
 - [ ] Basic auth scheme
 - [ ] OpenAPI document generated from the description

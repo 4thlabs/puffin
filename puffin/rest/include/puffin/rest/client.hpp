@@ -44,6 +44,7 @@
 #include <puffin/rest/detail/client.hpp>
 #include <puffin/rest/dsl.hpp>
 #include <puffin/rest/errors.hpp>
+#include <puffin/rest/transport.hpp>
 #include <puffin/webkit/client/client.hpp>
 #include <puffin/webkit/client/interceptor.hpp>
 #include <puffin/webkit/http/request.hpp>
@@ -58,43 +59,13 @@
 namespace puffin {
 namespace rest {
 
-/**
- * @brief What a rest client sends its requests through: webkit::basic_client, local_transport...
- */
-template<typename T>
-concept Transport = requires(T& t, webkit::request req) {
-  { t.request(std::move(req)) } -> std::same_as<async::async<webkit::response>>;
-};
-
-/**
- * @brief A transport calling a webkit server in process, without any I/O. For tests, or to call an api
- *        served by the same program.
- */
-template<typename Server>
-class local_transport {
-public:
-  explicit local_transport(Server& server)
-      : server_(server)
-  {}
-
-  async::async<webkit::response> request(webkit::request req)
-  {
-    webkit::response res;
-    co_await server_.handle(req, res);
-    co_return res;
-  }
-
-private:
-  Server& server_;
-};
-
 template<typename Client, typename Api, typename... Fixed>
 class scoped_client;
 
 /**
- * @brief Client of Api, over a Transport or a webkit Connector (wrapped in a webkit::basic_client):
+ * @brief Client of Api, over any_transport: a webkit Connector with host and port, or any Transport:
  *
- *   rest::client<bank::v1, webkit::asio::tcp_connector, webkit::interceptors::retry> api(connector, "bank.local", 8080);
+ *   rest::client<bank::v1, webkit::interceptors::retry> api(connector, "bank.local", 8080);
  *   api.credentials<rest::api_key<"X-Api-Key">>("sk_...");
  *   user u = co_await api.call<bank::users::get>(42);
  *
@@ -105,28 +76,23 @@ class scoped_client;
  *
  * Like webkit::basic_client, one call at a time.
  */
-template<typename Api, typename T, typename... Interceptors>
+template<typename Api, typename... Interceptors>
 class client {
 public:
   using api_type = Api;
-  using transport_type = typename detail::transport_for<T>::type;
-
-  static_assert(Transport<transport_type>, "client needs a Transport or a webkit Connector");
 
   template<typename E>
   using result_type = typename find_endpoint_t<Api, E>::result_type;
 
-  /// Arguments are given to the transport (for a Connector: the connector, host and port)
+  /// Arguments are given to any_transport: a Connector, host and port, or a Transport
   template<typename... A>
-    requires std::constructible_from<transport_type, A...>
+    requires std::constructible_from<any_transport, A...>
   explicit client(A&&... args)
       : transport_(std::forward<A>(args)...)
   {}
 
   client(const client&) = delete;
   client& operator=(const client&) = delete;
-
-  transport_type& transport() noexcept { return transport_; }
 
   /// Headers added to every request (User-Agent...)
   webkit::headers& headers() noexcept { return headers_; }
@@ -227,7 +193,7 @@ private:
   }
 
 private:
-  transport_type transport_;
+  any_transport transport_;
   webkit::headers headers_;
   detail::credential_store credentials_;
   webkit::interceptor_chain<Interceptors...> interceptors_;

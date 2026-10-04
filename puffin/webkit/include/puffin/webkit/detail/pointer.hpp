@@ -34,17 +34,27 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PUFFIN_REST_HPP
-#define PUFFIN_REST_HPP
+#ifndef PUFFIN_WEBKIT_DETAIL_POINTER_HPP
+#define PUFFIN_WEBKIT_DETAIL_POINTER_HPP
 
-#include <puffin/rest/client.hpp>
-#include <puffin/rest/codec.hpp>
-#include <puffin/rest/dsl.hpp>
-#include <puffin/rest/errors.hpp>
-#include <puffin/rest/fixed_string.hpp>
-#include <puffin/rest/params.hpp>
-#include <puffin/rest/path.hpp>
-#include <puffin/rest/server.hpp>
-#include <puffin/rest/transport.hpp>
+#include <stdexcept>
 
-#endif // PUFFIN_REST_HPP
+namespace puffin {
+namespace webkit {
+namespace detail {
+
+/// The object a type erasing wrapper points to, std::logic_error(what) once the wrapper was moved from
+template<typename Pointer>
+auto& checked(const Pointer& pointer, const char* what)
+{
+  if (!pointer)
+    throw std::logic_error(what);
+
+  return *pointer;
+}
+
+} // namespace detail
+} // namespace webkit
+} // namespace puffin
+
+#endif // PUFFIN_WEBKIT_DETAIL_POINTER_HPP

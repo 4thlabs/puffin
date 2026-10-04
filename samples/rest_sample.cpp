@@ -166,7 +166,7 @@ void mount_api(server_type& server)
 // Client side, over any webkit Connector
 //
 
-using notes_client = rest::client<v1, wk::any_connector, wk::interceptors::retry>;
+using notes_client = rest::client<v1, wk::interceptors::retry>;
 
 pa::async<void> demo(wk::any_connector connector, std::uint16_t port)
 {
