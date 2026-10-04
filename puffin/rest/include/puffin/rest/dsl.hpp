@@ -88,9 +88,6 @@ constexpr std::string_view method_name(http_method m) noexcept
   return "GET";
 }
 
-/// True for methods a client may safely send twice
-constexpr bool idempotent(http_method m) noexcept { return m != http_method::post && m != http_method::patch; }
-
 namespace detail {
 
 struct part_tag {};
@@ -142,7 +139,7 @@ struct returns : detail::part_tag {
 };
 
 //
-// Security schemes, checked by the server validators and filled by the client interceptors. They are not
+// Security schemes, checked by the server validators and sent by the client from its credentials. They are not
 // part of the handler and call signatures.
 //
 
@@ -233,7 +230,7 @@ struct first_or<typelist<T, Ts...>, Default> {
  *
  * The name makes the endpoint type unique, the type being its identity (service dispatch, client::call): two
  * endpoints with the same method and path in different domains stay distinct. Names must be unique in an api,
- * checked at compile time. They are also given to the interceptors (call_info::name).
+ * checked at compile time. The server names its routes after them, for webkit middlewares (ctx.route()->name).
  */
 template<fixed_string Name, http_method M, fixed_string Path, typename... Parts>
 struct endpoint : detail::endpoint_tag {
@@ -379,24 +376,6 @@ struct find_endpoint {
 
 template<typename Api, typename E>
 using find_endpoint_t = typename find_endpoint<Api, E>::type;
-
-/**
- * @brief Static information on the endpoint being called, given to the interceptors
- */
-template<typename R>
-struct call_info {
-  using endpoint = typename R::endpoint;
-  using resolved = R;
-  using schemes = typename R::schemes;
-
-  static constexpr http_method method = R::method;
-  static constexpr std::string_view method_name = rest::method_name(R::method);
-  static constexpr std::string_view path_template = R::path.view();
-  static constexpr std::string_view name = R::name;
-
-  template<typename Scheme>
-  static constexpr bool requires_scheme = detail::contains_v<Scheme, schemes>;
-};
 
 } // namespace rest
 } // namespace puffin

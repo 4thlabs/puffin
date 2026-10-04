@@ -311,9 +311,9 @@ void encode_arg(outgoing& out, const V& value)
   // Path parameters are formatted with the path
 }
 
-/// The request of endpoint R for these argument values
+/// The parts of the request of endpoint R for these argument values
 template<typename R, typename Values>
-webkit::request encode_request(const Values& values, const webkit::headers& defaults)
+outgoing encode_parts(const Values& values, const webkit::headers& defaults)
 {
   outgoing out;
   out.headers = defaults;
@@ -326,6 +326,13 @@ webkit::request encode_request(const Values& values, const webkit::headers& defa
     (encode_arg<at_t<Is, typename R::args>>(out, std::get<Is>(values)), ...);
   }(std::make_index_sequence<R::args::size>());
 
+  return out;
+}
+
+/// The request of endpoint R from its complete parts
+template<typename R>
+webkit::request to_request(outgoing out)
+{
   webkit::request req(std::string(method_name(R::method)), std::move(out.target));
   req.headers() = std::move(out.headers);
   req.body(std::move(out.body));

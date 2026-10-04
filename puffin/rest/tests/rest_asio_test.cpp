@@ -36,9 +36,9 @@ TEST_CASE("Rest api over asio", "[rest][asio]")
 
   auto scenario = [&]() -> pa::async<bank::card> {
     // A Connector: the client wraps it in a webkit::basic_client
-    rest::client<bank::v1, wk::asio::tcp_connector, rest::intercept::api_key> api(wk::asio::tcp_connector {io},
+    rest::client<bank::v1, wk::asio::tcp_connector> api(wk::asio::tcp_connector {io},
                                                                                   "127.0.0.1", acceptor.port());
-    api.interceptor<rest::intercept::api_key>().key("k3y");
+    api.credentials<rest::api_key<"X-Api-Key">>("k3y");
 
     bank::user ada = co_await api.call<bank::users::create>(bank::new_user {"Ada", "ada@bank.io"});
     bank::card c = co_await api.call<bank::cards::issue>(ada.id, bank::new_card {1000});

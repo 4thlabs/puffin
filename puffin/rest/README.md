@@ -46,7 +46,7 @@ using v1 = rest::api<"/api/v1",
 
 - `endpoint<"name", METHOD, "/path", parts...>`: the name is mandatory and unique in its api (checked at compile
   time). It keeps endpoints with the same method and path in different domains distinct (`users.remove` and
-  `cards.remove`), and interceptors receive it as `Info::name`.
+  `cards.remove`), and the server names its route after it (`ctx.route()->name` in webkit middlewares).
 - Path parameters `{name:type}`: `int`, `int64`, `uint`, `uint64`, `double`, `bool`, `string` (the default), `path`
   (the rest of the path).
 - Parts: `query<"name", T>` (`std::optional<T>` when optional, `std::vector<T>` when repeated),
@@ -54,7 +54,7 @@ using v1 = rest::api<"/api/v1",
 - `api<"/prefix", ...>` nests apis; prefixes may have parameters. `with<parts..., apis...>` adds parts to every
   endpoint of the apis it wraps.
 - Security: `security<api_key<"Header">, api_key_query<"param">, bearer_auth>`. Schemes are not arguments: the server
-  checks them with validators, the client fills them with interceptors.
+  checks them with validators, the client sends the credentials it was given.
 
 Arguments are the same on both sides: the path parameters, the endpoint parts in order, then the parts inherited
 from `with<>`.
@@ -73,27 +73,27 @@ struct users_service {
 };
 
 rest::mount<v1>(server, auth_service {}, users_service {}, cards_service {},
-                rest::validators([&](const rest::api_key_value& k) { return k.value == key; }),
-                rest::interceptors(access_log {}));
+                rest::validators([&](const rest::api_key_value& k) { return k.value == key; }));
 ```
 
-A missing service, or one with the wrong arguments, is a compile error. Each request goes through the interceptors,
-the security validators, argument decoding, the service and the response encoding:
+A missing service, or one with the wrong arguments, is a compile error. Each request goes through the webkit
+middlewares of the server, then the security validators, argument decoding, the service and the response encoding:
 
 - 400 for an invalid argument or body, 415 for a wrong `Content-Type`, 401 for missing or rejected credentials.
 - `throw rest::http_error(status, "message")` answers that status with `{"error": "message"}`; other exceptions
   answer 500.
 - A `void` service answers 204, otherwise the status of `returns<>` (200 by default).
-- A server interceptor is `async<void> operator()(Info, ctx, next_handler next)`; it may answer itself, or
-  `co_await next()`.
+- Cross-cutting concerns (logs, metrics, maintenance) are webkit middlewares (`around(ctx, next)`, see the
+  [webkit README](../webkit/README.md#middlewares)). They see the responses rest answered, errors included, and the
+  endpoint name with `ctx.route()->name`.
 
 ## Calling it
 
 ```c++
 #include <puffin/webkit/adapter/asio.hpp>
 
-rest::client<v1, wk::asio::tcp_connector, rest::intercept::api_key, rest::intercept::retry> api(connector, "host", 80);
-api.interceptor<rest::intercept::api_key>().key("...");
+rest::client<v1, wk::asio::tcp_connector, wk::interceptors::retry> api(connector, "host", 80);
+api.credentials<rest::api_key<"X-Api-Key">>("...");
 
 user u = co_await api.call<users::get>(42);
 auto page = co_await api.call<users::list>();                // trailing optionals may be omitted
@@ -105,9 +105,11 @@ co_await alice_cards.call<cards::remove>(3);
 
 - The client runs over a webkit `Connector` (wrapped in a `webkit::basic_client`) or any `Transport`;
   `local_transport` calls a server in process, for tests.
-- A client interceptor is `async<webkit::response> operator()(Info, webkit::request&, next_request next)`.
-  Provided: `intercept::api_key`, `intercept::bearer` (refreshes the token once on 401), `intercept::retry`
-  (idempotent requests, transport errors and 502, 503, 504).
+- `credentials<Scheme>(value)` gives the value sent for a security scheme (`api_key<>`, `api_key_query<>`,
+  `bearer_auth`), only to the endpoints declaring it.
+- Interceptors are webkit ones (`async<response> operator()(request&, next_request)`, see the
+  [webkit README](../webkit/README.md#interceptors)): `wk::interceptors::retry`, `wk::interceptors::bearer`
+  (refreshes the token once on 401)...
 - `headers()` adds headers to every request, `make_request<E>(args...)` builds a request without sending it.
 
 ## Parameters and bodies

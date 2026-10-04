@@ -48,7 +48,6 @@
 
 #include <array>
 #include <cstddef>
-#include <functional>
 #include <memory>
 #include <string>
 #include <tuple>
@@ -75,44 +74,6 @@ validator_set<std::decay_t<Validators>...> validators(Validators&&... v)
   return {{std::forward<Validators>(v)...}};
 }
 
-/**
- * @brief Server interceptors of a mount, run around each call from the first to the last:
- *
- *   struct audit {
- *     template<typename Info>
- *     async<void> operator()(Info info, auto& ctx, rest::next_handler next)
- *     {
- *       co_await next();
- *       log(Info::method_name, Info::path_template, ctx.response().status_code());
- *     }
- *   };
- *
- * An interceptor may answer by itself (set the response or throw http_error) without calling next().
- */
-template<typename... Interceptors>
-struct interceptor_set {
-  std::tuple<Interceptors...> items;
-};
-
-template<typename... Interceptors>
-interceptor_set<std::decay_t<Interceptors>...> interceptors(Interceptors&&... i)
-{
-  return {{std::forward<Interceptors>(i)...}};
-}
-
-/// Continues a server call: the next interceptor, or security, decoding and the service
-class next_handler {
-public:
-  explicit next_handler(std::function<async::async<void>()> next)
-      : next_(std::move(next))
-  {}
-
-  async::async<void> operator()() const { return next_(); }
-
-private:
-  std::function<async::async<void>()> next_;
-};
-
 namespace detail {
 
 template<typename T>
@@ -122,20 +83,14 @@ template<typename... V>
 struct is_validator_set<validator_set<V...>> : std::true_type {};
 
 template<typename T>
-struct is_interceptor_set : std::false_type {};
+inline constexpr bool is_service_v = !is_validator_set<T>::value;
 
-template<typename... I>
-struct is_interceptor_set<interceptor_set<I...>> : std::true_type {};
-
-template<typename T>
-inline constexpr bool is_service_v = !is_validator_set<T>::value && !is_interceptor_set<T>::value;
-
-/// Index of the argument of mount that is a T (validator_set or interceptor_set), the count if none is
-template<template<typename> class Is, typename... Args>
-constexpr std::size_t find_set()
+/// Index of the validators(...) argument of mount, the count if there is none
+template<typename... Args>
+constexpr std::size_t validators_index()
 {
-  constexpr std::array<bool, sizeof...(Args) + 1> found = {Is<Args>::value..., false};
-  static_assert(count_true(found) <= 1, "mount takes at most one validators(...) and one interceptors(...)");
+  constexpr std::array<bool, sizeof...(Args) + 1> found = {is_validator_set<Args>::value..., false};
+  static_assert(count_true(found) <= 1, "mount takes at most one validators(...)");
   return first_true(found);
 }
 
@@ -155,10 +110,10 @@ constexpr std::size_t service_index()
 }
 
 /**
- * @brief Everything a mount keeps alive: services, validators and interceptors, shared by its routes.
+ * @brief Everything a mount keeps alive: services and validators, shared by its routes.
  *
- * A call goes through the interceptors, then security, argument decoding and the service. Each layer turns
- * an http_error into the response, so that the layers around it see it.
+ * A call goes through security, argument decoding and the service. An http_error becomes the response, so that
+ * the webkit middlewares around the route see it.
  */
 template<typename Ctx, typename... Args>
 class mount_state {
@@ -168,37 +123,22 @@ public:
       : items_(std::forward<A>(args)...)
   {}
 
-  /// Handles a request to endpoint R; the route owning this state outlives it
+  /// Handles a request to endpoint R, an http_error becomes the response; the route owning this state outlives it
   template<typename R>
   async::async<void> handle(Ctx& ctx)
   {
-    return intercept<R, 0>(ctx);
+    return answer_errors(ctx, call<R>(ctx));
   }
 
 private:
-  template<std::size_t Index>
-  auto& set_items()
+  auto& validators()
   {
-    if constexpr (Index < sizeof...(Args))
-      return std::get<Index>(items_).items;
+    constexpr std::size_t index = validators_index<Args...>();
+
+    if constexpr (index < sizeof...(Args))
+      return std::get<index>(items_).items;
     else
       return empty_;
-  }
-
-  auto& validators() { return set_items<find_set<is_validator_set, Args...>()>(); }
-  auto& interceptors() { return set_items<find_set<is_interceptor_set, Args...>()>(); }
-
-  template<typename R, std::size_t I>
-  async::async<void> intercept(Ctx& ctx)
-  {
-    auto& items = interceptors();
-
-    if constexpr (I == std::tuple_size_v<std::remove_reference_t<decltype(items)>>) {
-      co_await answer_errors(ctx, call<R>(ctx));
-    } else {
-      next_handler next([this, &ctx]() { return intercept<R, I + 1>(ctx); });
-      co_await answer_errors(ctx, std::get<I>(items)(call_info<R> {}, ctx, std::move(next)));
-    }
   }
 
   template<typename R>
@@ -230,8 +170,9 @@ void register_routes(Server& server, const std::shared_ptr<State>& state, typeli
   static_assert(((Api::template count<typename Rs::endpoint> == 1) && ...),
                 "an endpoint appears several times in the api");
 
-  (server.route(std::string(method_name(Rs::method)), Rs::path_type::regex(),
-                [state](context_type& ctx) { return state->template handle<Rs>(ctx); }),
+  (server.route(
+       std::string(method_name(Rs::method)), Rs::path_type::regex(),
+       [state](context_type& ctx) { return state->template handle<Rs>(ctx); }, std::string(Rs::name)),
    ...);
 }
 
@@ -242,14 +183,14 @@ void register_routes(Server& server, const std::shared_ptr<State>& state, typeli
  *
  *   rest::mount<bank::v1>(server,
  *                         auth_service{db}, users_service{db}, cards_service{db},
- *                         rest::validators(check_api_key),
- *                         rest::interceptors(audit{}));
+ *                         rest::validators(check_api_key));
  *
  * Every endpoint must be implemented by exactly one service, as operator()(Endpoint, args...) with the
  * arguments of the endpoint (path parameters, then its parts in order, then the inherited parts) and
  * optionally the context last, returning the returns<> type or async of it.
  *
- * Per request: webkit middlewares, interceptors, security validators, arguments decoding, service, encoding.
+ * Each route is named after its endpoint ("users.get"), reachable by webkit middlewares with ctx.route()->name.
+ * Per request: webkit middlewares, security validators, arguments decoding, service, encoding.
  * Invalid arguments answer 400, a wrong Content-Type 415, missing or rejected credentials 401, http_error its
  * status, any other exception 500.
  */

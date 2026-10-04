@@ -45,12 +45,11 @@
 #include <puffin/rest/dsl.hpp>
 #include <puffin/rest/errors.hpp>
 #include <puffin/webkit/client/client.hpp>
+#include <puffin/webkit/client/interceptor.hpp>
 #include <puffin/webkit/http/request.hpp>
 #include <puffin/webkit/http/response.hpp>
 
 #include <concepts>
-#include <cstddef>
-#include <functional>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -89,37 +88,20 @@ private:
   Server& server_;
 };
 
-/// Continues a client call: the next interceptor, or the transport
-class next_request {
-public:
-  explicit next_request(std::function<async::async<webkit::response>(webkit::request&)> next)
-      : next_(std::move(next))
-  {}
-
-  async::async<webkit::response> operator()(webkit::request& req) const { return next_(req); }
-
-private:
-  std::function<async::async<webkit::response>(webkit::request&)> next_;
-};
-
 template<typename Client, typename Api, typename... Fixed>
 class scoped_client;
 
 /**
  * @brief Client of Api, over a Transport or a webkit Connector (wrapped in a webkit::basic_client):
  *
- *   rest::client<bank::v1, webkit::asio::tcp_connector, rest::intercept::api_key> api(connector, "bank.local", 8080);
- *   api.interceptor<rest::intercept::api_key>().key("sk_...");
+ *   rest::client<bank::v1, webkit::asio::tcp_connector, webkit::interceptors::retry> api(connector, "bank.local", 8080);
+ *   api.credentials<rest::api_key<"X-Api-Key">>("sk_...");
  *   user u = co_await api.call<bank::users::get>(42);
  *
  * Arguments of call are those of the endpoint: path parameters, then its parts in order, then the inherited
- * parts. Trailing optional arguments may be omitted. Security schemes are not arguments, interceptors fill
- * them. Interceptors run from the first to the last around the transport:
- *
- *   struct trace {
- *     template<typename Info>
- *     async<webkit::response> operator()(Info, webkit::request& req, rest::next_request next);
- *   };
+ * parts. Trailing optional arguments may be omitted. Security schemes are not arguments: the client sends the
+ * credentials given for the schemes of each endpoint. Interceptors are webkit ones (see
+ * webkit::interceptor_chain), run around the transport.
  *
  * Like webkit::basic_client, one call at a time.
  */
@@ -152,7 +134,15 @@ public:
   template<typename I>
   I& interceptor()
   {
-    return std::get<I>(interceptors_);
+    return interceptors_.template get<I>();
+  }
+
+  /// The credential sent for security scheme S (api_key<>, api_key_query<>, bearer_auth) by the endpoints using it
+  template<typename S>
+  void credentials(std::string value)
+  {
+    static_assert(std::is_base_of_v<detail::scheme_tag, S>, "credentials are given for a security scheme");
+    credentials_.template set<S>(std::move(value));
   }
 
   /// Calls endpoint E, throws http_error if the response is not 2xx
@@ -183,7 +173,7 @@ public:
     return scoped_client<client, SubApi, std::decay_t<A>...>(*this, std::forward<A>(fixed)...);
   }
 
-  /// The request call<E>(args...) would send, before interceptors
+  /// The request call<E>(args...) would send, before the interceptors
   template<typename E, typename... A>
   webkit::request make_request(A&&... args) const
   {
@@ -194,7 +184,10 @@ private:
   template<typename R, typename... A>
   webkit::request build_request(A&&... args) const
   {
-    webkit::request req = detail::encode_request<R>(detail::complete_args<R>(std::forward<A>(args)...), headers_);
+    detail::outgoing out = detail::encode_parts<R>(detail::complete_args<R>(std::forward<A>(args)...), headers_);
+    credentials_.template apply<R>(out);
+
+    webkit::request req = detail::to_request<R>(std::move(out));
     using expected = typename R::result_type;
 
     if constexpr (!std::is_void_v<expected>) {
@@ -207,16 +200,9 @@ private:
     return req;
   }
 
-  template<typename R, std::size_t I>
-  async::async<webkit::response> intercept(webkit::request& req)
+  async::async<webkit::response> transmit(webkit::request req)
   {
-    if constexpr (I == sizeof...(Interceptors)) {
-      // A copy: an interceptor may send the request again
-      co_return co_await transport_.request(req);
-    } else {
-      co_return co_await std::get<I>(interceptors_)(
-          call_info<R> {}, req, next_request([this](webkit::request& r) { return intercept<R, I + 1>(r); }));
-    }
+    return interceptors_.run(std::move(req), [this](webkit::request r) { return transport_.request(std::move(r)); });
   }
 
   template<typename R>
@@ -224,7 +210,7 @@ private:
   {
     using expected = typename R::result_type;
 
-    webkit::response res = co_await intercept<R, 0>(req);
+    webkit::response res = co_await transmit(std::move(req));
 
     if (res.status_code() < 200 || res.status_code() >= 300)
       throw http_error(res.status_code(), std::move(res.body()), std::move(res.headers()));
@@ -245,7 +231,8 @@ private:
 private:
   transport_type transport_;
   webkit::headers headers_;
-  std::tuple<Interceptors...> interceptors_;
+  detail::credential_store credentials_;
+  webkit::interceptor_chain<Interceptors...> interceptors_;
 };
 
 template<typename Client, typename Api, typename... Fixed>
@@ -278,109 +265,6 @@ private:
   Client& parent_;
   std::tuple<Fixed...> fixed_;
 };
-
-namespace intercept {
-
-/// Fills the api_key<> and api_key_query<> schemes of the called endpoints
-class api_key {
-public:
-  void key(std::string key) { key_ = std::move(key); }
-  const std::string& key() const noexcept { return key_; }
-
-  template<typename Info>
-  async::async<webkit::response> operator()(Info, webkit::request& req, next_request next)
-  {
-    detail::for_each_scheme<typename Info::schemes>::apply([&]<typename S>() {
-      if constexpr (requires { S::in_query; }) {
-        if constexpr (S::in_query) {
-          std::string target = req.target();
-          detail::append_query(target, S::name.view(), key_);
-          req.target(std::move(target));
-        } else {
-          req.headers().set(std::string(S::name.view()), key_);
-        }
-      }
-    });
-
-    co_return co_await next(req);
-  }
-
-private:
-  std::string key_;
-};
-
-/**
- * @brief Fills the bearer_auth schemes of the called endpoints. With a refresh function, a 401 refreshes the
- *        token and sends the request again, once.
- */
-class bearer {
-public:
-  void token(std::string token) { token_ = std::move(token); }
-  const std::string& token() const noexcept { return token_; }
-
-  void on_refresh(std::function<async::async<std::string>()> refresh) { refresh_ = std::move(refresh); }
-
-  template<typename Info>
-  async::async<webkit::response> operator()(Info, webkit::request& req, next_request next)
-  {
-    if constexpr (!detail::contains_v<bearer_auth, typename Info::schemes>) {
-      co_return co_await next(req);
-    } else {
-      authorize(req);
-      webkit::response res = co_await next(req);
-
-      if (res.status_code() != static_cast<int>(webkit::status::unauthorized) || !refresh_)
-        co_return res;
-
-      token_ = co_await refresh_();
-      authorize(req);
-      co_return co_await next(req);
-    }
-  }
-
-private:
-  void authorize(webkit::request& req) const
-  {
-    req.headers().set("Authorization", param_traits<rest::bearer>::format(rest::bearer {token_}));
-  }
-
-  std::string token_;
-  std::function<async::async<std::string>()> refresh_;
-};
-
-/**
- * @brief Sends idempotent requests again when the transport fails or the server answers 502, 503 or 504.
- */
-class retry {
-public:
-  /// Total number of attempts, 3 by default
-  void attempts(std::size_t n) { attempts_ = n == 0 ? 1 : n; }
-  std::size_t attempts() const noexcept { return attempts_; }
-
-  template<typename Info>
-  async::async<webkit::response> operator()(Info, webkit::request& req, next_request next)
-  {
-    if constexpr (!idempotent(Info::method)) {
-      co_return co_await next(req);
-    } else {
-      for (std::size_t attempt = 1;; ++attempt) {
-        auto outcome = co_await async::try_await(next(req));
-
-        if (attempt >= attempts_ || (outcome && !detail::retryable_status(outcome.value->status_code()))) {
-          if (!outcome)
-            outcome.rethrow();
-
-          co_return std::move(*outcome.value);
-        }
-      }
-    }
-  }
-
-private:
-  std::size_t attempts_ = 3;
-};
-
-} // namespace intercept
 
 } // namespace rest
 } // namespace puffin

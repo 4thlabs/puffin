@@ -138,14 +138,14 @@ private:
   int next_id_ = 1;
 };
 
-/// Logs every call with its status
+/// A webkit middleware logging every call with its endpoint and status
 struct access_log {
-  template<typename Info>
-  pa::async<void> operator()(Info, auto& ctx, rest::next_handler next)
+  template<typename Context>
+  pa::async<void> around(Context& ctx, wk::next_handler next)
   {
     co_await next();
-    std::cout << Info::method_name << " " << ctx.request().target() << " -> " << ctx.response().status_code()
-              << std::endl;
+    std::cout << (ctx.route() ? ctx.route()->name : "-") << " " << ctx.request().target() << " -> "
+              << ctx.response().status_code() << std::endl;
   }
 };
 
@@ -155,9 +155,9 @@ struct access_log {
 
 pa::async<void> demo(::asio::io_context& io, std::uint16_t port)
 {
-  rest::client<v1, wk::asio::tcp_connector, rest::intercept::api_key> api(wk::asio::tcp_connector {io}, "127.0.0.1",
-                                                                          port);
-  api.interceptor<rest::intercept::api_key>().key("secret-key");
+  rest::client<v1, wk::asio::tcp_connector, wk::interceptors::retry> api(wk::asio::tcp_connector {io}, "127.0.0.1",
+                                                                         port);
+  api.credentials<rest::api_key<"X-Api-Key">>("secret-key");
 
   std::cout << "ping: " << co_await api.call<health::ping>() << std::endl;
 
@@ -182,10 +182,9 @@ int main(int argc, char** argv)
   ::asio::io_context io;
   pa::asio::executor executor {io};
 
-  wk::basic_server<> server;
+  wk::basic_server<access_log> server;
   rest::mount<v1>(server, notes_service {},
-                  rest::validators([](const rest::api_key_value& key) { return key.value == "secret-key"; }),
-                  rest::interceptors(access_log {}));
+                  rest::validators([](const rest::api_key_value& key) { return key.value == "secret-key"; }));
 
   wk::asio::tcp_acceptor acceptor(io, port);
   std::cout << "Listening on http://0.0.0.0:" << acceptor.port() << std::endl;
