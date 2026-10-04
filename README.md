@@ -171,7 +171,7 @@ using v1 = rest::api<"/api/v1", rest::with<rest::security<rest::api_key<"X-Api-K
 rest::mount<v1>(server, users_service{}, rest::validators(check_api_key));
 
 // Client: the same description
-rest::client<v1, wk::asio::tcp_connector> api(connector, "host", 80);
+rest::client<v1, wk::any_connector> api(connector, "host", 80); // any_connector: asio, Qt... picked by main
 api.credentials<rest::api_key<"X-Api-Key">>(key);
 user u = co_await api.call<users::get>(42);
 ```

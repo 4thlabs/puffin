@@ -43,6 +43,7 @@
 #include <puffin/webkit/middlewares/cookies.hpp>
 #include <puffin/webkit/middlewares/session.hpp>
 #include <puffin/webkit/server/server.hpp>
+#include <puffin/webkit/transport/any.hpp>
 #include <puffin/webkit/transport/reader.hpp>
 #include <catch2/catch_test_macros.hpp>
 
@@ -315,6 +316,26 @@ TEST_CASE("Client over a stream", "[webkit][client]")
     REQUIRE(p->output == "GET /a HTTP/1.1\r\nHost: example.com:8080\r\n\r\n"
                          "POST /b HTTP/1.1\r\nContent-Type: text/plain\r\nHost: example.com:8080\r\n"
                          "Content-Length: 4\r\n\r\ndata");
+  }
+
+  SECTION("Through any_connector")
+  {
+    auto p = connector.add("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nhi"
+                           "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nho");
+
+    basic_client<any_connector> client(any_connector(connector), "example.com", 80);
+    static_assert(Connector<any_connector> && Stream<any_stream>);
+
+    REQUIRE(sync_wait(client.get("/a")).body() == "hi");
+    REQUIRE(sync_wait(client.get("/b")).body() == "ho");
+    REQUIRE(*connector.connections == 1);
+    REQUIRE(p->output == "GET /a HTTP/1.1\r\nHost: example.com\r\n\r\nGET /b HTTP/1.1\r\nHost: example.com\r\n\r\n");
+
+    client.close();
+    REQUIRE(p->closed);
+
+    // No pipe left: the connection error comes through
+    REQUIRE_THROWS_AS(sync_wait(client.get("/c")), std::runtime_error);
   }
 
   SECTION("Interim responses are skipped")
