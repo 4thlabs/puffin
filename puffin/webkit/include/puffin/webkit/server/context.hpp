@@ -39,7 +39,7 @@
 
 #include <puffin/webkit/http/request.hpp>
 #include <puffin/webkit/http/response.hpp>
-#include <puffin/webkit/server/router.hpp>
+#include <puffin/webkit/server/route_info.hpp>
 
 #include <string>
 #include <string_view>

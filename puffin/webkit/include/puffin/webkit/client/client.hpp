@@ -110,10 +110,7 @@ public:
   /// Sends a request through the interceptors and returns its response
   async::async<response> request(webkit::request req)
   {
-    if constexpr (sizeof...(Interceptors) == 0)
-      return transmit(std::move(req));
-    else
-      return intercept(std::move(req));
+    return chain_.run(std::move(req), [this](webkit::request r) { return transmit(std::move(r)); });
   }
 
   /// Access to an interceptor instance, to configure it
@@ -176,13 +173,6 @@ private:
   private:
     bool& busy_;
   };
-
-  async::async<response> intercept(webkit::request req)
-  {
-    // A copy for each attempt: an interceptor may send the request again
-    auto send = [this](webkit::request& r) { return transmit(r); };
-    co_return co_await chain_.send(req, send);
-  }
 
   /// Sends a request on the connection. Host and Connection headers are filled if missing.
   async::async<response> transmit(webkit::request req)

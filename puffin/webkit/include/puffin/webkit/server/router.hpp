@@ -37,6 +37,8 @@
 #ifndef PUFFIN_WEBKIT_SERVER_ROUTER_HPP
 #define PUFFIN_WEBKIT_SERVER_ROUTER_HPP
 
+#include <puffin/webkit/server/route_info.hpp>
+
 #include <algorithm>
 #include <regex>
 #include <string>
@@ -45,13 +47,6 @@
 
 namespace puffin {
 namespace webkit {
-
-/// What the server knows about the route a request matched, reachable from the context
-struct route_info {
-  std::string method;
-  std::string pattern;
-  std::string name; ///< Given when the route was added, empty by default
-};
 
 /**
  * @brief Routes requests to handlers from their method and path.

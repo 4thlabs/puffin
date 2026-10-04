@@ -38,11 +38,11 @@
 #define PUFFIN_WEBKIT_CLIENT_INTERCEPTOR_HPP
 
 #include <puffin/async/async.hpp>
+#include <puffin/webkit/detail/continuation.hpp>
 #include <puffin/webkit/http/request.hpp>
 #include <puffin/webkit/http/response.hpp>
 
 #include <cstddef>
-#include <functional>
 #include <tuple>
 #include <utility>
 
@@ -50,17 +50,7 @@ namespace puffin {
 namespace webkit {
 
 /// Continues a request from an interceptor: the next interceptor, or the transport
-class next_request {
-public:
-  explicit next_request(std::function<async::async<response>(request&)> next)
-      : next_(std::move(next))
-  {}
-
-  async::async<response> operator()(request& req) const { return next_(req); }
-
-private:
-  std::function<async::async<response>(request&)> next_;
-};
+using next_request = detail::continuation<async::async<response>(request&)>;
 
 /**
  * @brief The interceptors of a client. An interceptor is a class with
@@ -83,11 +73,18 @@ public:
     return std::get<I>(interceptors_);
   }
 
-  /// Runs the interceptors in order, the last one continuing with send(request&)
+  /**
+   * @brief Sends a request through the interceptors, the last one continuing with send(request).
+   *        Without interceptors the request is moved to send, otherwise each attempt sends a copy.
+   */
   template<typename Send>
-  async::async<response> send(request& req, Send& send)
+  async::async<response> run(request req, Send send)
   {
-    return send_from<0>(req, send);
+    if constexpr (sizeof...(Interceptors) == 0) {
+      co_return co_await send(std::move(req));
+    } else {
+      co_return co_await send_from<0>(req, send); // send(request) takes a copy of req
+    }
   }
 
 private:

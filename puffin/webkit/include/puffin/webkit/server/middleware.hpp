@@ -38,10 +38,10 @@
 #define PUFFIN_WEBKIT_SERVER_MIDDLEWARE_HPP
 
 #include <puffin/async/async.hpp>
+#include <puffin/webkit/detail/continuation.hpp>
 #include <puffin/webkit/server/context.hpp>
 
 #include <cstddef>
-#include <functional>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -50,17 +50,7 @@ namespace puffin {
 namespace webkit {
 
 /// Continues a request from an around() middleware: the next around() middleware, or the route handler
-class next_handler {
-public:
-  explicit next_handler(std::function<async::async<void>()> next)
-      : next_(std::move(next))
-  {}
-
-  async::async<void> operator()() const { return next_(); }
-
-private:
-  std::function<async::async<void>()> next_;
-};
+using next_handler = detail::continuation<async::async<void>()>;
 
 /**
  * @brief A middleware may define:
