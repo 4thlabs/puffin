@@ -64,6 +64,9 @@ context (concept `Executor`). `any_executor` type-erases them:
 Two executors compare equal when they are the same object or when the underlying type is equality comparable and
 the values compare equal.
 
+An executor with a timer also has a thread safe `post_after(std::coroutine_handle<>, std::chrono::nanoseconds)`
+(concept `TimedExecutor`), used by `sleep_for`. Every built-in executor has one.
+
 ### Where a coroutine runs
 
 Every `async` coroutine knows its executor:
@@ -89,6 +92,7 @@ whatever thread resumes it.
 | `try_await(task)` | `try_await.hpp` | Awaits a task and returns its value or exception (`outcome<T>`), to handle a failure with `co_await`. |
 | `schedule_on(executor)` | `schedule.hpp` | Awaitable moving the coroutine to another executor. |
 | `this_executor` | `schedule.hpp` | `any_executor ex = co_await this_executor;` |
+| `sleep_for(duration)` | `sleep.hpp` | `co_await sleep_for(200ms);` resumes on the same executor once the delay elapsed (`TimedExecutor`). Without an executor, blocks the calling thread. |
 | `from_callback<Args...>(initiate)` | `from_callback.hpp` | Awaits any callback based operation. |
 | `executor_of(handle)` | `executor.hpp` | Executor of a coroutine handle, for custom awaitables. |
 | `thread_executor`, `inline_executor` | `impl/thread_executor.hpp` | Built-in executors. |
@@ -180,10 +184,11 @@ A single thread executor resuming coroutines in posting order.
 | `restart()` | Allows `run()` again after `stop()`. |
 | `wait()` | Stops and joins the owned thread (also done by the destructor). |
 | `schedule()` | `co_await executor.schedule();` moves the coroutine to this executor. |
+| `post_after(h, delay)` | Resumes `h` once `delay` elapsed, in deadline order. |
 | `running_in_this_thread()` | `true` on the pumping thread. |
 
-Coroutines still queued when the loop stops are not resumed. `inline_executor` resumes in `post()` directly and
-is mostly useful in tests.
+Coroutines still queued or waiting for their delay when the loop stops are not resumed. `inline_executor` resumes in
+`post()` directly (and blocks in `post_after()`) and is mostly useful in tests.
 
 ### Writing an awaitable
 
@@ -262,7 +267,7 @@ app.exec();
 
 ## Limitations
 
-- No cancellation and no `when_any` yet.
+- No cancellation and no `when_any` yet, so no timeouts: `sleep_for` is the timer they will build on.
 - The awaitable concepts (`Awaitable`, `await_result_t`) still live in webkit.
 
 See the [roadmap](../../docs/roadmap.md) and the tests in [`tests/`](tests).

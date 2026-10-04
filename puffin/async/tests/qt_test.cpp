@@ -108,6 +108,22 @@ TEST_CASE("qt adapter", "[async][qt]")
     REQUIRE(std::chrono::steady_clock::now() - start >= 20ms);
   }
 
+  SECTION("generic sleep_for on the Qt executor")
+  {
+    auto start = std::chrono::steady_clock::now();
+    bool done = false;
+
+    co_spawn(qt::executor {}, [&]() -> async<void> {
+      co_await puffin::async::sleep_for(20ms);
+      done = true;
+      app.quit();
+    });
+
+    app.exec();
+    REQUIRE(done);
+    REQUIRE(std::chrono::steady_clock::now() - start >= 20ms);
+  }
+
   SECTION("signals")
   {
     QString name;

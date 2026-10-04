@@ -119,6 +119,21 @@ TEST_CASE("asio adapter", "[async][asio]")
     REQUIRE(std::chrono::steady_clock::now() - start >= 20ms);
   }
 
+  SECTION("generic sleep_for on the asio executor")
+  {
+    auto start = std::chrono::steady_clock::now();
+    bool done = false;
+
+    co_spawn(pa::executor { context }, [&]() -> async<void> {
+      co_await puffin::async::sleep_for(20ms);
+      done = true;
+    });
+
+    context.run();
+    REQUIRE(done);
+    REQUIRE(std::chrono::steady_clock::now() - start >= 20ms);
+  }
+
   SECTION("tcp echo")
   {
     tcp::acceptor acceptor(context, tcp::endpoint(asio::ip::address_v4::loopback(), 0));

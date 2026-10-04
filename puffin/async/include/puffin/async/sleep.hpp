@@ -34,18 +34,53 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PUFFIN_ASYNC_HPP
-#define PUFFIN_ASYNC_HPP
+#ifndef PUFFIN_ASYNC_SLEEP_HPP
+#define PUFFIN_ASYNC_SLEEP_HPP
 
-#include <puffin/async/async.hpp>
-#include <puffin/async/co_spawn.hpp>
 #include <puffin/async/executor.hpp>
-#include <puffin/async/from_callback.hpp>
 #include <puffin/async/impl/thread_executor.hpp>
-#include <puffin/async/schedule.hpp>
-#include <puffin/async/sleep.hpp>
-#include <puffin/async/sync_wait.hpp>
-#include <puffin/async/try_await.hpp>
-#include <puffin/async/when_all.hpp>
 
-#endif // PUFFIN_ASYNC_HPP
+#include <chrono>
+#include <coroutine>
+
+namespace puffin {
+namespace async {
+
+/**
+ * @brief Suspends the awaiting coroutine for a duration, then resumes it on its executor:
+ *
+ *   co_await sleep_for(std::chrono::milliseconds(200));
+ *
+ * The executor needs a timer (TimedExecutor: thread_executor, inline_executor, the asio and Qt executors), or
+ * std::logic_error is thrown. Without any executor (sync_wait with none), it sleeps like inline_executor: blocking.
+ */
+class sleep_for {
+public:
+  template<typename Rep, typename Period>
+  explicit sleep_for(std::chrono::duration<Rep, Period> duration)
+      : delay_(std::chrono::ceil<std::chrono::nanoseconds>(duration))
+  {}
+
+  bool await_ready() const noexcept { return delay_.count() <= 0; }
+
+  template<typename P>
+  void await_suspend(std::coroutine_handle<P> h) const
+  {
+    any_executor executor = executor_of(h);
+
+    if (executor)
+      executor.post_after(h, delay_);
+    else
+      inline_executor {}.post_after(h, delay_);
+  }
+
+  void await_resume() const noexcept {}
+
+private:
+  std::chrono::nanoseconds delay_;
+};
+
+}
+}
+
+#endif // PUFFIN_ASYNC_SLEEP_HPP

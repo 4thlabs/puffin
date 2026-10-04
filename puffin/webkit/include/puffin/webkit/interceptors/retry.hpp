@@ -38,6 +38,7 @@
 #define PUFFIN_WEBKIT_INTERCEPTORS_RETRY_HPP
 
 #include <puffin/async/async.hpp>
+#include <puffin/async/sleep.hpp>
 #include <puffin/async/try_await.hpp>
 #include <puffin/webkit/client/interceptor.hpp>
 #include <puffin/webkit/detail/string.hpp>
@@ -122,11 +123,8 @@ namespace interceptors {
  * @brief Sends idempotent requests again when the transport fails or the server answers 502, 503 or 504.
  *
  * Attempts are spaced by an exponential backoff (100 ms, then doubled, up to 5 s), or by the Retry-After of the
- * response (seconds, capped at the maximum delay). Waiting depends on the event loop, so it is given:
- *
- *   client.interceptor<interceptors::retry>().sleep([ex](auto delay) { return async::asio::sleep_for(ex, delay); });
- *
- * Without a sleep function, attempts follow each other immediately. A malformed response is not retried.
+ * response (seconds, capped at the maximum delay). The wait is async::sleep_for, on the executor of the request
+ * (it needs a timer); sleep() replaces it, for tests or another timer. A malformed response is not retried.
  */
 class retry {
 public:
@@ -143,6 +141,7 @@ public:
     max_delay_ = std::max(first_delay, max_delay);
   }
 
+  /// Replaces async::sleep_for between attempts
   void sleep(sleep_function sleep) { sleep_ = std::move(sleep); }
 
   async::async<response> operator()(request& req, next_request next) const
@@ -160,8 +159,7 @@ public:
         co_return std::move(*outcome.value);
       }
 
-      if (sleep_)
-        co_await sleep_(delay(attempt, outcome ? &*outcome.value : nullptr));
+      co_await sleep_(delay(attempt, outcome ? &*outcome.value : nullptr));
     }
   }
 
@@ -176,7 +174,9 @@ private:
   std::size_t attempts_ = 3;
   std::chrono::milliseconds first_delay_ {100};
   std::chrono::milliseconds max_delay_ {5000};
-  sleep_function sleep_;
+  sleep_function sleep_ = [](std::chrono::milliseconds delay) -> async::async<void> {
+    co_await async::sleep_for(delay);
+  };
 };
 
 } // namespace interceptors

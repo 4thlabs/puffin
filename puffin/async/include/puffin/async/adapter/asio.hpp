@@ -62,6 +62,7 @@
 #include <chrono>
 #include <coroutine>
 #include <exception>
+#include <memory>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -104,6 +105,13 @@ public:
   void post(std::coroutine_handle<> h) const
   {
     ::puffin::async::detail::net::post(inner_, [h] { h.resume(); });
+  }
+
+  /// Resumes h once delay elapsed, with a steady_timer
+  void post_after(std::coroutine_handle<> h, std::chrono::nanoseconds delay) const
+  {
+    auto timer = std::make_shared<::puffin::async::detail::net::steady_timer>(inner_, delay);
+    timer->async_wait([timer, h](const auto&) { h.resume(); });
   }
 
   const inner_executor_type& get_inner_executor() const noexcept { return inner_; }

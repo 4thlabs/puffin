@@ -37,9 +37,11 @@
 #ifndef PUFFIN_ASYNC_EXECUTOR_HPP
 #define PUFFIN_ASYNC_EXECUTOR_HPP
 
+#include <chrono>
 #include <concepts>
 #include <coroutine>
 #include <memory>
+#include <stdexcept>
 #include <type_traits>
 
 namespace puffin {
@@ -52,6 +54,15 @@ namespace async {
 template<typename T>
 concept Executor = requires(T& e, std::coroutine_handle<> h) {
   { e.post(h) };
+};
+
+/**
+ * @brief An executor with a timer: post_after() resumes the handle once the delay elapsed, on its own context.
+ *        Needed by sleep_for(). post_after() must be thread safe.
+ */
+template<typename T>
+concept TimedExecutor = Executor<T> && requires(T& e, std::coroutine_handle<> h, std::chrono::nanoseconds delay) {
+  { e.post_after(h, delay) };
 };
 
 /**
@@ -81,6 +92,9 @@ public:
 
     post_ = &post_impl<executor_type>;
 
+    if constexpr (TimedExecutor<executor_type>)
+      post_after_ = &post_after_impl<executor_type>;
+
     if constexpr (std::equality_comparable<executor_type>)
       equal_ = &equal_impl<executor_type>;
   }
@@ -89,6 +103,17 @@ public:
    * @brief Schedule the resumption of h on the underlying executor
    */
   void post(std::coroutine_handle<> h) const { post_(object_, h); }
+
+  /**
+   * @brief Schedule the resumption of h once delay elapsed, throws std::logic_error if the executor has no timer
+   */
+  void post_after(std::coroutine_handle<> h, std::chrono::nanoseconds delay) const
+  {
+    if (!post_after_)
+      throw std::logic_error("this executor has no timer (post_after)");
+
+    post_after_(object_, h, delay);
+  }
 
   explicit operator bool() const noexcept { return object_ != nullptr; }
 
@@ -111,6 +136,12 @@ private:
   }
 
   template<typename E>
+  static void post_after_impl(void* object, std::coroutine_handle<> h, std::chrono::nanoseconds delay)
+  {
+    static_cast<E*>(object)->post_after(h, delay);
+  }
+
+  template<typename E>
   static bool equal_impl(const void* lhs, const void* rhs)
   {
     return *static_cast<const E*>(lhs) == *static_cast<const E*>(rhs);
@@ -119,6 +150,7 @@ private:
   std::shared_ptr<void> owner_;
   void* object_ = nullptr;
   void (*post_)(void*, std::coroutine_handle<>) = nullptr;
+  void (*post_after_)(void*, std::coroutine_handle<>, std::chrono::nanoseconds) = nullptr;
   bool (*equal_)(const void*, const void*) = nullptr;
 };
 
