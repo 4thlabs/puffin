@@ -159,6 +159,9 @@ namespace detail {
 template<typename V>
 http_error http_error_of(const async::outcome<V>& outcome)
 {
+  if (outcome)
+    throw std::logic_error("http_error_of: the outcome holds a value");
+
   try {
     outcome.rethrow();
   } catch (const http_error& e) {

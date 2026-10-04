@@ -51,7 +51,7 @@ namespace interceptors {
 
 /**
  * @brief Sends "Authorization: Bearer <token>" with every request. With a refresh function, a 401 refreshes the
- *        token and sends the request again, once.
+ *        token and sends the request again, once. Not synchronized: like its client, one request at a time.
  */
 class bearer {
 public:

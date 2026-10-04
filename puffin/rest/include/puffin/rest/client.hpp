@@ -153,7 +153,8 @@ public:
     return send<R>(build_request<R>(std::forward<A>(args)...));
   }
 
-  /// Calls endpoint E, an error status is returned instead of thrown (transport errors are still thrown)
+  /// Calls endpoint E, an error status is returned instead of thrown (transport errors are still thrown, and request
+  /// encoding errors by try_call itself, before the task starts)
   template<typename E, typename... A>
   async::async<result<result_type<E>>> try_call(A&&... args)
   {

@@ -56,6 +56,7 @@ using next_request = detail::continuation<async::async<response>(request&)>;
  * @brief The interceptors of a client. An interceptor is a class with
  *        async<response> operator()(request&, next_request), called in order around the sending of each request.
  *        It may change the request, answer it itself, or co_await next(req), possibly several times (retry).
+ *        Each interceptor type appears once, get<I>() finds it by type.
  */
 template<typename... Interceptors>
 class interceptor_chain {

@@ -437,3 +437,36 @@ TEST_CASE("Interceptors and middlewares", "[rest]")
     REQUIRE(log == std::vector<std::string> {"users.list 401", "users.list 200", "users.list 503"});
   }
 }
+
+namespace creds {
+using namespace puffin::rest;
+
+// Schemes sharing a name or a header: each keeps its own credential
+using header_key = endpoint<"header_key", GET, "/h", security<api_key<"key">>>;
+using query_key = endpoint<"query_key", GET, "/q", security<api_key_query<"key">>>;
+using authorization_key = endpoint<"authorization_key", GET, "/a", security<api_key<"Authorization">>>;
+using token = endpoint<"token", GET, "/t", security<bearer_auth>>;
+using open = endpoint<"open", GET, "/o">;
+
+using api = rest::api<"", header_key, query_key, authorization_key, token, open>;
+} // namespace creds
+
+TEST_CASE("Client credentials", "[rest]")
+{
+  bank_fixture f;
+  rest::client<creds::api, rest::local_transport<server_type>> api(f.server);
+  api.credentials<rest::api_key<"key">>("in header");
+  api.credentials<rest::api_key_query<"key">>("in query");
+  api.credentials<rest::api_key<"Authorization">>("raw");
+  api.credentials<rest::bearer_auth>("t0k");
+
+  REQUIRE(api.make_request<creds::header_key>().headers().get("key") == "in header");
+  REQUIRE(api.make_request<creds::query_key>().target() == "/q?key=in%20query");
+  REQUIRE(api.make_request<creds::authorization_key>().headers().get("Authorization") == "raw");
+  REQUIRE(api.make_request<creds::token>().headers().get("Authorization") == "Bearer t0k");
+
+  wk::request open = api.make_request<creds::open>();
+  REQUIRE_FALSE(open.headers().contains("key"));
+  REQUIRE_FALSE(open.headers().contains("Authorization"));
+  REQUIRE(open.target() == "/o");
+}

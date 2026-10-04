@@ -80,8 +80,8 @@ A missing service, or one with the wrong arguments, is a compile error. Each req
 middlewares of the server, then the security validators, argument decoding, the service and the response encoding:
 
 - 400 for an invalid argument or body, 415 for a wrong `Content-Type`, 401 for missing or rejected credentials.
-- `throw rest::http_error(status, "message")` answers that status with `{"error": "message"}`; other exceptions
-  answer 500.
+- `throw rest::http_error(status, "message")` answers that status with `{"error": "message"}`, the message is sent
+  as is to the client; other exceptions answer 500 without detail.
 - A `void` service answers 204, otherwise the status of `returns<>` (200 by default).
 - Cross-cutting concerns (logs, metrics, maintenance) are webkit middlewares (`around(ctx, next)`, see the
   [webkit README](../webkit/README.md#middlewares)). They see the responses rest answered, errors included, and the

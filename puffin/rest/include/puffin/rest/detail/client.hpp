@@ -45,10 +45,8 @@
 #include <puffin/rest/params.hpp>
 #include <puffin/webkit/client/client.hpp>
 
-#include <functional>
 #include <map>
 #include <string>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -80,15 +78,9 @@ result<T> to_result(async::outcome<V> outcome)
   return result<T>(http_error_of(outcome));
 }
 
-/// Identifies a security scheme among the credentials of a client
+/// One address per security scheme type, identifying it among the credentials of a client
 template<typename S>
-constexpr std::string_view scheme_id()
-{
-  if constexpr (std::is_same_v<S, bearer_auth>)
-    return "Authorization";
-  else
-    return S::name.view();
-}
+inline constexpr char scheme_key = 0;
 
 /// Sends the credential of scheme S where the scheme says
 template<typename S>
@@ -108,7 +100,7 @@ public:
   template<typename S>
   void set(std::string value)
   {
-    values_[std::string(scheme_id<S>())] = std::move(value);
+    values_[&scheme_key<S>] = std::move(value);
   }
 
   /// Adds the credentials the schemes of endpoint R need, when known
@@ -122,13 +114,13 @@ private:
   template<typename S>
   void apply_one(outgoing& out) const
   {
-    auto it = values_.find(scheme_id<S>());
+    auto it = values_.find(&scheme_key<S>);
 
     if (it != values_.end())
       add_credential<S>(out, it->second);
   }
 
-  std::map<std::string, std::string, std::less<>> values_;
+  std::map<const char*, std::string> values_; ///< By scheme_key: two schemes never share a credential
 };
 
 } // namespace detail
