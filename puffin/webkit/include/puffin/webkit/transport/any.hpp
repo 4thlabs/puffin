@@ -45,6 +45,7 @@
 #include <cstdint>
 #include <memory>
 #include <span>
+#include <stdexcept>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -54,6 +55,8 @@ namespace webkit {
 
 /**
  * @brief Any Stream, behind one virtual call per operation.
+ *
+ * Owns its stream: a moved-from any_stream throws std::logic_error. Only basic_client holds one in practice.
  */
 class any_stream {
 public:
@@ -63,9 +66,9 @@ public:
       : impl_(std::make_unique<model<S>>(std::move(stream)))
   {}
 
-  async::async<std::size_t> read_some(std::span<char> buffer) { return impl_->read_some(buffer); }
-  async::async<std::size_t> write(std::span<const char> data) { return impl_->write(data); }
-  void close() { impl_->close(); }
+  async::async<std::size_t> read_some(std::span<char> buffer) { return stream().read_some(buffer); }
+  async::async<std::size_t> write(std::span<const char> data) { return stream().write(data); }
+  void close() { stream().close(); }
 
 private:
   struct concept_t {
@@ -92,24 +95,41 @@ private:
     S stream;
   };
 
+  concept_t& stream() const
+  {
+    if (!impl_)
+      throw std::logic_error("any_stream: moved from");
+
+    return *impl_;
+  }
+
   std::unique_ptr<concept_t> impl_;
 };
 
 /**
  * @brief Any Connector, its streams being any_stream. Application code taking an any_connector does not depend on
- *        the runtime, only the caller picks it:
+ *        the runtime, only the caller picks it (the constructor is implicit for that):
  *
  *   void run(rest::client<v1, webkit::any_connector>& api);
  *
  *   rest::client<v1, webkit::any_connector> api(webkit::asio::tcp_connector { io }, "example.com", 80);
+ *
+ * Never empty: copies share the wrapped connector, and moving copies, so that a reference to an any_connector
+ * stays usable whatever happens to the object it refers to. Host and buffers must outlive the operations, as for
+ * any Connector and Stream.
  */
 class any_connector {
 public:
   template<Connector C>
     requires(!std::same_as<std::decay_t<C>, any_connector>)
   any_connector(C connector)
-      : impl_(std::make_unique<model<C>>(std::move(connector)))
+      : impl_(std::make_shared<model<C>>(std::move(connector)))
   {}
+
+  // No move operations: moving copies, the source keeps its connector
+  any_connector(const any_connector&) = default;
+  any_connector& operator=(const any_connector&) = default;
+  ~any_connector() = default;
 
   async::async<any_stream> connect(std::string_view host, std::uint16_t port) { return impl_->connect(host, port); }
 
@@ -133,7 +153,7 @@ private:
     C connector;
   };
 
-  std::unique_ptr<concept_t> impl_;
+  std::shared_ptr<concept_t> impl_;
 };
 
 } // namespace webkit

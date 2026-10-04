@@ -255,6 +255,7 @@ co_await client.post("/users", R"({"name":"puffin"})", "application/json");
 - `wk::any_connector` wraps any `Connector` (its streams being `wk::any_stream`), so that application code
   holding a client does not depend on the runtime: `basic_client<wk::any_connector>` is built from
   `wk::asio::tcp_connector { io }`, `wk::qt::tcp_connector {}`... One virtual call per read or write.
+  An `any_connector` is never empty: copies share the connector and moving copies.
 - One client talks to one host. The connection opens on the first request and is kept alive.
 - `get`, `post`, `put`, `del`, or `request(wk::request)` for full control. `Host` and `Connection` are filled when
   missing.

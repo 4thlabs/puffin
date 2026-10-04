@@ -338,6 +338,32 @@ TEST_CASE("Client over a stream", "[webkit][client]")
     REQUIRE_THROWS_AS(sync_wait(client.get("/c")), std::runtime_error);
   }
 
+  SECTION("any_connector is never empty: moving copies")
+  {
+    connector.add("HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\na");
+    connector.add("HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nb");
+
+    any_connector source(connector);
+    const any_connector& ref = source;
+    basic_client<any_connector> first(std::move(source), "example.com", 80);
+    basic_client<any_connector> second(ref, "example.com", 80);
+
+    REQUIRE(sync_wait(first.get("/")).body() == "a");
+    REQUIRE(sync_wait(second.get("/")).body() == "b");
+    REQUIRE(*connector.connections == 2);
+  }
+
+  SECTION("A moved-from any_stream throws")
+  {
+    any_stream stream(test::memory_stream {});
+    any_stream other(std::move(stream));
+    char buffer[4];
+
+    other.close();
+    REQUIRE_THROWS_AS(stream.close(), std::logic_error);
+    REQUIRE_THROWS_AS(stream.read_some(buffer), std::logic_error);
+  }
+
   SECTION("Interim responses are skipped")
   {
     connector.add("HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
