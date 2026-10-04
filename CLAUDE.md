@@ -21,6 +21,10 @@ The asio, TLS and Qt adapters are only built when `libasio-dev`, `libssl-dev` an
 - Module docs live in `puffin/<module>/README.md`; `docs/roadmap.md` has one short checkbox list per module,
   keep it updated when finishing or deferring work.
 - PRs target `master`.
+- Samples, READMEs and doc snippets keep application code independent of the runtime: routes, services, clients and
+  demos only use puffin types and concepts (`Acceptor`, `Connector`, executors). Only `main` (or the caller of the
+  snippet) picks asio or Qt and creates the executor, acceptors and connectors. Adapter sections of the docs are the
+  only exception.
 
 ## Code quality
 

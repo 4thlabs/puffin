@@ -86,6 +86,9 @@ ctest --test-dir build --output-on-failure
 
 ## A quick tour
 
+Application code only uses puffin: routes, services and clients do not depend on asio or Qt. `main` picks the
+runtime, creating the executor, the acceptors and the connectors, and the samples are written that way.
+
 ### Async
 
 ```c++
@@ -121,12 +124,20 @@ More in [puffin/async/README.md](puffin/async/README.md).
 namespace pa = puffin::async;
 namespace wk = puffin::webkit;
 
-wk::basic_server<wk::middlewares::cookies, wk::middlewares::session> server;
+using server_type = wk::basic_server<wk::middlewares::cookies, wk::middlewares::session>;
 
-server.get("/users/([0-9]+)", [](auto& ctx) -> pa::async<void> {
-  ctx.response().body(co_await load_user(ctx.param(0)), "application/json");
-  ctx.session()["last_user"] = std::string(ctx.param(0));
-});
+// The application, independent of the runtime
+void add_routes(server_type& server)
+{
+  server.get("/users/([0-9]+)", [](auto& ctx) -> pa::async<void> {
+    ctx.response().body(co_await load_user(ctx.param(0)), "application/json");
+    ctx.session()["last_user"] = std::string(ctx.param(0));
+  });
+}
+
+// main picks the runtime, asio here
+server_type server;
+add_routes(server);
 
 ::asio::io_context io;
 wk::asio::tcp_acceptor acceptor(io, 8080);
