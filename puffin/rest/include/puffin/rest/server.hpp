@@ -65,7 +65,7 @@ namespace rest {
  */
 template<typename... Validators>
 struct validator_set {
-  std::tuple<Validators...> items;
+  std::tuple<Validators...> value;
 };
 
 template<typename... Validators>
@@ -83,14 +83,20 @@ template<typename... V>
 struct is_validator_set<validator_set<V...>> : std::true_type {};
 
 template<typename T>
-inline constexpr bool is_service_v = !is_validator_set<T>::value;
+struct is_error_codec_option : std::false_type {};
 
-/// Index of the validators(...) argument of mount, the count if there is none
-template<typename... Args>
-constexpr std::size_t validators_index()
+template<typename C>
+struct is_error_codec_option<error_codec_option<C>> : std::true_type {};
+
+template<typename T>
+inline constexpr bool is_service_v = !is_validator_set<T>::value && !is_error_codec_option<T>::value;
+
+/// Index of the option of mount (validators(...), errors(...)) matching Is, the count if there is none
+template<template<typename> class Is, typename... Args>
+constexpr std::size_t option_index()
 {
-  constexpr std::array<bool, sizeof...(Args) + 1> found = {is_validator_set<Args>::value..., false};
-  static_assert(count_true(found) <= 1, "mount takes at most one validators(...)");
+  constexpr std::array<bool, sizeof...(Args) + 1> found = {Is<Args>::value..., false};
+  static_assert(count_true(found) <= 1, "mount takes at most one validators(...) and one errors(...)");
   return first_true(found);
 }
 
@@ -127,19 +133,24 @@ public:
   template<typename R>
   async::async<void> handle(Ctx& ctx)
   {
-    return answer_errors(ctx, call<R>(ctx));
+    return answer_errors(ctx, call<R>(ctx), error_codec());
   }
 
 private:
-  auto& validators()
+  /// The value of the mount option matching Is, or the fallback when it was not given
+  template<template<typename> class Is, typename Fallback>
+  auto& option(Fallback& fallback)
   {
-    constexpr std::size_t index = validators_index<Args...>();
+    constexpr std::size_t index = option_index<Is, Args...>();
 
     if constexpr (index < sizeof...(Args))
-      return std::get<index>(items_).items;
+      return std::get<index>(items_).value;
     else
-      return empty_;
+      return fallback;
   }
+
+  auto& validators() { return option<is_validator_set>(no_validators_); }
+  auto& error_codec() { return option<is_error_codec_option>(default_error_codec_); }
 
   template<typename R>
   async::async<void> call(Ctx& ctx)
@@ -159,7 +170,8 @@ private:
 
 private:
   std::tuple<Args...> items_;
-  std::tuple<> empty_;
+  [[no_unique_address]] std::tuple<> no_validators_;
+  [[no_unique_address]] json_error_codec default_error_codec_;
 };
 
 template<typename Api, typename Server, typename State, typename... Rs>
@@ -192,7 +204,8 @@ void register_routes(Server& server, const std::shared_ptr<State>& state, typeli
  * Each route is named after its endpoint ("users.get"), reachable by webkit middlewares with ctx.route()->name.
  * Per request: webkit middlewares, security validators, arguments decoding, service, encoding.
  * Invalid arguments answer 400, a wrong Content-Type 415, missing or rejected credentials 401, http_error its
- * status, any other exception 500.
+ * status, any other exception 500. Error messages are written by the error codec, {"error": message} unless
+ * rest::errors(rest::text_error_codec {}) or another codec is given.
  */
 template<typename Api, typename Server, typename... Args>
 void mount(Server& server, Args&&... args)

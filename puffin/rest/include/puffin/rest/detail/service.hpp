@@ -126,42 +126,22 @@ void write_result(webkit::response& res, const Result&... result)
   res.status(returns::status);
 }
 
-inline std::string json_escape(std::string_view s)
-{
-  static constexpr char digits[] = "0123456789abcdef";
-  std::string out;
-
-  for (unsigned char c : s) {
-    if (c == '"' || c == '\\') {
-      out += '\\';
-      out += static_cast<char>(c);
-    } else if (c < 0x20) {
-      out += "\\u00";
-      out += digits[c >> 4];
-      out += digits[c & 0x0F];
-    } else {
-      out += static_cast<char>(c);
-    }
-  }
-
-  return out;
-}
-
-/// The response of an http_error: its status and {"error": message}
-inline void write_error(webkit::response& res, const http_error& e)
+/// The response of an http_error: its status, and its message encoded by the error codec of the mount
+template<typename ErrorCodec>
+void write_error(webkit::response& res, const http_error& e, const ErrorCodec& codec)
 {
   res.status(e.status());
-  res.body("{\"error\":\"" + json_escape(e.what()) + "\"}", "application/json");
+  res.body(codec.encode(e), std::string(codec.content_type));
 }
 
-/// Runs one layer of a call, an http_error it throws becomes the response so that the outer layers see it
-template<typename Ctx>
-async::async<void> answer_errors(Ctx& ctx, async::async<void> layer)
+/// Runs a call, an http_error it throws becomes the response so that the webkit middlewares around see it
+template<typename Ctx, typename ErrorCodec>
+async::async<void> answer_errors(Ctx& ctx, async::async<void> call, const ErrorCodec& codec)
 {
-  auto outcome = co_await async::try_await(std::move(layer));
+  auto outcome = co_await async::try_await(std::move(call));
 
   if (!outcome)
-    write_error(ctx.response(), http_error_of(outcome));
+    write_error(ctx.response(), http_error_of(outcome), codec);
 }
 
 } // namespace detail

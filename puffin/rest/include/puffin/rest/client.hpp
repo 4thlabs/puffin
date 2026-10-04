@@ -145,21 +145,25 @@ public:
     credentials_.template set<S>(std::move(value));
   }
 
-  /// Calls endpoint E, throws http_error if the response is not 2xx
+  /**
+   * @brief Calls endpoint E, throws http_error if the response is not 2xx. The arguments are copied into the task,
+   *        every error (encoding, transport, status) comes out of it.
+   */
   template<typename E, typename... A>
-  async::async<result_type<E>> call(A&&... args)
+  async::async<result_type<E>> call(A... args)
   {
     using R = find_endpoint_t<Api, E>;
-    return send<R>(build_request<R>(std::forward<A>(args)...));
+    co_return co_await send<R>(build_request<R>(std::move(args)...));
   }
 
-  /// Calls endpoint E, an error status is returned instead of thrown (transport errors are still thrown, and request
-  /// encoding errors by try_call itself, before the task starts)
+  /// Calls endpoint E, an error status is returned instead of thrown (encoding and transport errors are still thrown)
   template<typename E, typename... A>
-  async::async<result<result_type<E>>> try_call(A&&... args)
+  async::async<result<result_type<E>>> try_call(A... args)
   {
     using R = find_endpoint_t<Api, E>;
-    return try_send<R>(build_request<R>(std::forward<A>(args)...));
+    webkit::request req = build_request<R>(std::move(args)...);
+    auto outcome = co_await async::try_await(send<R>(std::move(req)));
+    co_return detail::to_result<result_type<E>>(std::move(outcome));
   }
 
   /**
@@ -220,13 +224,6 @@ private:
       using codec = detail::result_codec_t<R>;
       co_return codec::template decode<expected>(res.body());
     }
-  }
-
-  template<typename R>
-  async::async<result<typename R::result_type>> try_send(webkit::request req)
-  {
-    auto outcome = co_await async::try_await(send<R>(std::move(req)));
-    co_return detail::to_result<typename R::result_type>(std::move(outcome));
   }
 
 private:

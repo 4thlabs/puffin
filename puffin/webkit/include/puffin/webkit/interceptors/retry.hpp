@@ -40,10 +40,18 @@
 #include <puffin/async/async.hpp>
 #include <puffin/async/try_await.hpp>
 #include <puffin/webkit/client/interceptor.hpp>
+#include <puffin/webkit/detail/string.hpp>
+#include <puffin/webkit/http/errors.hpp>
 #include <puffin/webkit/http/method.hpp>
 #include <puffin/webkit/http/status.hpp>
 
+#include <algorithm>
+#include <chrono>
 #include <cstddef>
+#include <functional>
+#include <optional>
+#include <stdexcept>
+#include <string_view>
 #include <utility>
 
 namespace puffin {
@@ -57,18 +65,85 @@ constexpr bool retryable_status(int code) noexcept
          code == static_cast<int>(status::gateway_timeout);
 }
 
+/// False for the failures sending again cannot fix: a malformed response, a misuse of the client
+inline bool transient_failure(const std::exception_ptr& error)
+{
+  try {
+    std::rethrow_exception(error);
+  } catch (const protocol_error&) {
+    return false;
+  } catch (const std::logic_error&) {
+    return false;
+  } catch (...) {
+    return true;
+  }
+}
+
+/// True if an attempt ended in a way worth trying again
+template<typename Outcome>
+bool worth_retrying(const Outcome& outcome)
+{
+  return outcome ? retryable_status(outcome.value->status_code()) : transient_failure(outcome.error);
+}
+
+/// The delay a response asks for with "Retry-After: <seconds>" (an HTTP date is not supported), at most a day
+inline std::optional<std::chrono::milliseconds> retry_after(const response& res)
+{
+  auto value = res.headers().get("Retry-After");
+  auto seconds = value ? parse_decimal(trim(*value)) : std::nullopt;
+
+  if (!seconds)
+    return std::nullopt;
+
+  return std::chrono::seconds(std::min<std::size_t>(*seconds, 24 * 3600));
+}
+
+/// The exponential backoff before the attempt after `attempt`: first, doubled each time, up to max
+constexpr std::chrono::milliseconds backoff_delay(std::size_t attempt, std::chrono::milliseconds first,
+                                                  std::chrono::milliseconds max) noexcept
+{
+  auto delay = first;
+
+  for (std::size_t i = 1; i < attempt && delay < max; ++i)
+    delay *= 2;
+
+  return std::min(delay, max);
+}
+
+static_assert(backoff_delay(1, std::chrono::milliseconds(100), std::chrono::seconds(5)).count() == 100);
+static_assert(backoff_delay(3, std::chrono::milliseconds(100), std::chrono::seconds(5)).count() == 400);
+static_assert(backoff_delay(20, std::chrono::milliseconds(100), std::chrono::seconds(5)).count() == 5000);
+
 } // namespace detail
 
 namespace interceptors {
 
 /**
  * @brief Sends idempotent requests again when the transport fails or the server answers 502, 503 or 504.
+ *
+ * Attempts are spaced by an exponential backoff (100 ms, then doubled, up to 5 s), or by the Retry-After of the
+ * response (seconds, capped at the maximum delay). Waiting depends on the event loop, so it is given:
+ *
+ *   client.interceptor<interceptors::retry>().sleep([ex](auto delay) { return async::asio::sleep_for(ex, delay); });
+ *
+ * Without a sleep function, attempts follow each other immediately. A malformed response is not retried.
  */
 class retry {
 public:
+  using sleep_function = std::function<async::async<void>(std::chrono::milliseconds)>;
+
   /// Total number of attempts, 3 by default
   void attempts(std::size_t n) { attempts_ = n == 0 ? 1 : n; }
   std::size_t attempts() const noexcept { return attempts_; }
+
+  /// Delay before the second attempt, doubled before each next one up to max_delay
+  void backoff(std::chrono::milliseconds first_delay, std::chrono::milliseconds max_delay)
+  {
+    first_delay_ = first_delay;
+    max_delay_ = std::max(first_delay, max_delay);
+  }
+
+  void sleep(sleep_function sleep) { sleep_ = std::move(sleep); }
 
   async::async<response> operator()(request& req, next_request next) const
   {
@@ -78,17 +153,30 @@ public:
     for (std::size_t attempt = 1;; ++attempt) {
       auto outcome = co_await async::try_await(next(req));
 
-      if (attempt >= attempts_ || (outcome && !detail::retryable_status(outcome.value->status_code()))) {
+      if (attempt >= attempts_ || !detail::worth_retrying(outcome)) {
         if (!outcome)
           outcome.rethrow();
 
         co_return std::move(*outcome.value);
       }
+
+      if (sleep_)
+        co_await sleep_(delay(attempt, outcome ? &*outcome.value : nullptr));
     }
   }
 
 private:
+  /// The delay after a failed attempt: the Retry-After of its response, or the backoff
+  std::chrono::milliseconds delay(std::size_t attempt, const response* res) const
+  {
+    auto asked = res ? detail::retry_after(*res) : std::nullopt;
+    return std::min(asked.value_or(detail::backoff_delay(attempt, first_delay_, max_delay_)), max_delay_);
+  }
+
   std::size_t attempts_ = 3;
+  std::chrono::milliseconds first_delay_ {100};
+  std::chrono::milliseconds max_delay_ {5000};
+  sleep_function sleep_;
 };
 
 } // namespace interceptors

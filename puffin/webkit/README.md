@@ -268,7 +268,10 @@ client.interceptor<wk::interceptors::bearer>().on_refresh([]() -> pa::async<std:
 - `interceptors::bearer` sends `Authorization: Bearer <token>`. With `on_refresh`, a `401` refreshes the token and
   sends the request again, once.
 - `interceptors::retry` sends idempotent requests again when the transport fails or the server answers `502`, `503`
-  or `504`, 3 attempts by default (`attempts(n)`).
+  or `504`, 3 attempts by default (`attempts(n)`). A malformed response is not retried. Attempts are spaced by an
+  exponential backoff (`backoff(first, max)`, 100 ms doubling up to 5 s) or by the `Retry-After` of the response
+  (seconds, capped at the maximum). Waiting depends on the event loop, so it is given with `sleep(f)`, for instance
+  `[ex](auto d) { return pa::asio::sleep_for(ex, d); }`; without it attempts follow each other immediately.
 
 ## HTTP messages
 

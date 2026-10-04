@@ -46,7 +46,9 @@
 #include <puffin/webkit/transport/reader.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <chrono>
 #include <stdexcept>
+#include <vector>
 #include <string>
 
 using namespace puffin::webkit;
@@ -486,6 +488,38 @@ TEST_CASE("Client interceptors", "[webkit][client]")
     basic_client<test::memory_connector, interceptors::retry> client(connector, "example.com", 80);
 
     REQUIRE(sync_wait(client.get("/")).body() == "ok");
+  }
+
+  SECTION("retry waits with a backoff, or what Retry-After asks")
+  {
+    connector.add("HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n"
+                  "HTTP/1.1 503 Service Unavailable\r\nRetry-After: 2\r\nContent-Length: 0\r\n\r\n"
+                  "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n"
+                  "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+    basic_client<test::memory_connector, interceptors::retry> client(connector, "example.com", 80);
+
+    std::vector<std::chrono::milliseconds> waits;
+    auto& retry = client.interceptor<interceptors::retry>();
+    retry.attempts(4);
+    retry.backoff(std::chrono::milliseconds(100), std::chrono::milliseconds(1500));
+    retry.sleep([&](std::chrono::milliseconds delay) -> async<void> {
+      waits.push_back(delay);
+      co_return;
+    });
+
+    REQUIRE(sync_wait(client.get("/")).status_code() == 200);
+    REQUIRE(waits == std::vector<std::chrono::milliseconds> {std::chrono::milliseconds(100),
+                                                             std::chrono::milliseconds(1500),
+                                                             std::chrono::milliseconds(400)});
+  }
+
+  SECTION("retry does not send again after a malformed response")
+  {
+    connector.add("HTTP/1.1 nope\r\n\r\n");
+    connector.add("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+    basic_client<test::memory_connector, interceptors::retry> client(connector, "example.com", 80);
+
+    REQUIRE_THROWS_AS(sync_wait(client.get("/")), protocol_error);
   }
 
   SECTION("retry leaves other requests alone")

@@ -38,12 +38,15 @@
 #define PUFFIN_REST_ERRORS_HPP
 
 #include <puffin/async/try_await.hpp>
+#include <puffin/rest/codec.hpp>
 #include <puffin/webkit/http/headers.hpp>
 #include <puffin/webkit/http/status.hpp>
 
+#include <concepts>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -54,8 +57,8 @@ namespace rest {
 /**
  * @brief An HTTP error status.
  *
- * Server side, thrown by a service or an interceptor to answer this status, the message being sent as
- * {"error": message}. Client side, thrown by client::call when the response is not 2xx, the message being
+ * Server side, thrown by a service to answer this status, the message being sent to the client by the error
+ * codec of the mount ({"error": message} by default). Client side, thrown by client::call when the response is not 2xx, the message being
  * the response body.
  */
 class http_error : public std::runtime_error {
@@ -155,6 +158,28 @@ private:
 
 namespace detail {
 
+/// A string as the inside of a JSON string literal
+inline std::string json_escape(std::string_view s)
+{
+  static constexpr char digits[] = "0123456789abcdef";
+  std::string out;
+
+  for (unsigned char c : s) {
+    if (c == '"' || c == '\\') {
+      out += '\\';
+      out += static_cast<char>(c);
+    } else if (c < 0x20) {
+      out += "\\u00";
+      out += digits[c >> 4];
+      out += digits[c & 0x0F];
+    } else {
+      out += static_cast<char>(c);
+    }
+  }
+
+  return out;
+}
+
 /// The http_error of a failed outcome; any other exception is rethrown
 template<typename V>
 http_error http_error_of(const async::outcome<V>& outcome)
@@ -170,6 +195,40 @@ http_error http_error_of(const async::outcome<V>& outcome)
 }
 
 } // namespace detail
+
+/// How a mount writes the message of an http_error (rest::errors)
+template<typename C>
+concept ErrorCodec = requires(const C& codec, const http_error& e) {
+  { C::content_type } -> std::convertible_to<std::string_view>;
+  { codec.encode(e) } -> std::convertible_to<std::string>;
+};
+
+struct json_error_codec {
+  static constexpr std::string_view content_type = "application/json";
+
+  /// {"error": message}
+  std::string encode(const http_error& e) const { return "{\"error\":\"" + detail::json_escape(e.what()) + "\"}"; }
+};
+
+/// The message as plain text
+struct text_error_codec {
+  static constexpr std::string_view content_type = text_codec::content_type;
+
+  std::string encode(const http_error& e) const { return e.what(); }
+};
+
+/// The error codec of a mount, json_error_codec when not given
+template<ErrorCodec Codec>
+struct error_codec_option {
+  Codec value;
+};
+
+template<typename Codec>
+  requires ErrorCodec<std::decay_t<Codec>>
+error_codec_option<std::decay_t<Codec>> errors(Codec&& codec)
+{
+  return {std::forward<Codec>(codec)};
+}
 
 } // namespace rest
 } // namespace puffin

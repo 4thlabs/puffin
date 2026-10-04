@@ -48,7 +48,7 @@
 - [x] Router with parameters, 405 + Allow, HEAD falls back to GET
 - [x] Typed context extended by middlewares
 - [x] Async `around` middlewares, matched route reachable from the context
-- [x] Client interceptors (`bearer` with refresh, `retry`)
+- [x] Client interceptors (`bearer` with refresh, `retry` with backoff and Retry-After)
 - [x] Cookies middleware
 - [x] Session middleware, signed with HMAC-SHA256, expiry checked by the server
 - [x] Set-Cookie validation (no attribute injection)
@@ -75,7 +75,7 @@
 - [x] Nested apis with parameterized prefixes, `with<>` shared parts
 - [x] Security schemes: api key (header, query), bearer
 - [x] Server: `mount` with compile-time checked services and validators, routes named after endpoints, automatic
-  400, 401, 415, 204
+  400, 401, 415, 204, error codecs
 - [x] Client: `call`, `try_call`, `scope`, `credentials`, webkit interceptors
 - [x] Codecs (text, JSON with nlohmann), `param_traits`, `enum_param`, `local_transport`
 - [ ] Basic auth scheme

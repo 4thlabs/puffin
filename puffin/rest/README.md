@@ -80,8 +80,10 @@ A missing service, or one with the wrong arguments, is a compile error. Each req
 middlewares of the server, then the security validators, argument decoding, the service and the response encoding:
 
 - 400 for an invalid argument or body, 415 for a wrong `Content-Type`, 401 for missing or rejected credentials.
-- `throw rest::http_error(status, "message")` answers that status with `{"error": "message"}`, the message is sent
-  as is to the client; other exceptions answer 500 without detail.
+- `throw rest::http_error(status, "message")` answers that status, the message being sent as is to the client;
+  other exceptions answer 500 without detail. The message is written by the error codec of the mount,
+  `{"error": "message"}` by default (`json_error_codec`); `rest::errors(rest::text_error_codec {})` sends it as
+  plain text, and any class with a `content_type` and `std::string encode(const http_error&) const` will do.
 - A `void` service answers 204, otherwise the status of `returns<>` (200 by default).
 - Cross-cutting concerns (logs, metrics, maintenance) are webkit middlewares (`around(ctx, next)`, see the
   [webkit README](../webkit/README.md#middlewares)). They see the responses rest answered, errors included, and the
@@ -110,6 +112,8 @@ co_await alice_cards.call<cards::remove>(3);
 - Interceptors are webkit ones (`async<response> operator()(request&, next_request)`, see the
   [webkit README](../webkit/README.md#interceptors)): `wk::interceptors::retry`, `wk::interceptors::bearer`
   (refreshes the token once on 401)...
+- `call` and `try_call` copy their arguments into the task: every error comes out of it when awaited, and
+  `try_call` turns error statuses into values.
 - `headers()` adds headers to every request, `make_request<E>(args...)` builds a request without sending it.
 
 ## Parameters and bodies

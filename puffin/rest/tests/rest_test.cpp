@@ -9,6 +9,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -177,6 +178,23 @@ TEST_CASE("Server: requests, statuses and errors", "[rest]")
     REQUIRE(res.body() == R"({"error":"no user 9"})");
   }
 
+  SECTION("errors written by another error codec")
+  {
+    bank::store db;
+    server_type server;
+    rest::mount<bank::v1>(server, bank::auth_service {db}, bank::users_service {db}, bank::cards_service {db},
+                          rest::validators(bank::api_key_validator {"k3y"}, bank::bearer_validator {}),
+                          rest::errors(rest::text_error_codec {}));
+
+    wk::request req = f.with_key(wk::request("GET", "/api/v1/users/9"));
+    wk::response res;
+    pa::sync_wait(server.handle(req, res));
+
+    REQUIRE(res.status_code() == 404);
+    REQUIRE(res.body() == "no user 9");
+    REQUIRE(res.headers().get("Content-Type") == "text/plain; charset=utf-8");
+  }
+
   SECTION("invalid arguments")
   {
     REQUIRE(f.send(f.with_key(wk::request("GET", "/api/v1/users?limit=abc"))).status_code() == 400);
@@ -282,6 +300,20 @@ TEST_CASE("Client: calls through a transport", "[rest]")
   };
 
   pa::sync_wait(scenario());
+}
+
+TEST_CASE("Client: encoding errors come out of the task", "[rest]")
+{
+  bank_fixture f;
+  local_client api(f.server);
+  api.credentials<rest::api_key<"X-Api-Key">>("k3y");
+
+  // A header value with a line feed is rejected when the request is built, inside the task
+  auto call = api.call<bank::cards::list>(7, bank::card_status::frozen, "bad\nid");
+  REQUIRE_THROWS_AS(pa::sync_wait(std::move(call)), std::invalid_argument);
+
+  auto attempt = api.try_call<bank::cards::list>(7, bank::card_status::frozen, "bad\nid");
+  REQUIRE_THROWS_AS(pa::sync_wait(std::move(attempt)), std::invalid_argument);
 }
 
 TEST_CASE("Client: request building", "[rest]")
