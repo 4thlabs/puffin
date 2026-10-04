@@ -34,35 +34,65 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PUFFIN_WEBKIT_HPP
-#define PUFFIN_WEBKIT_HPP
+#ifndef PUFFIN_WEBKIT_INTERCEPTORS_RETRY_HPP
+#define PUFFIN_WEBKIT_INTERCEPTORS_RETRY_HPP
 
-#include <puffin/webkit/uri/uri.hpp>
-
-#include <puffin/webkit/http/cookie.hpp>
-#include <puffin/webkit/http/errors.hpp>
-#include <puffin/webkit/http/headers.hpp>
-#include <puffin/webkit/http/method.hpp>
-#include <puffin/webkit/http/parser.hpp>
-#include <puffin/webkit/http/request.hpp>
-#include <puffin/webkit/http/response.hpp>
-#include <puffin/webkit/http/serializer.hpp>
-#include <puffin/webkit/http/status.hpp>
-#include <puffin/webkit/http/version.hpp>
-
-#include <puffin/webkit/server/context.hpp>
-#include <puffin/webkit/server/middleware.hpp>
-#include <puffin/webkit/server/router.hpp>
-#include <puffin/webkit/server/server.hpp>
-
-#include <puffin/webkit/client/client.hpp>
+#include <puffin/async/async.hpp>
+#include <puffin/async/try_await.hpp>
 #include <puffin/webkit/client/interceptor.hpp>
-#include <puffin/webkit/interceptors/bearer.hpp>
-#include <puffin/webkit/interceptors/retry.hpp>
+#include <puffin/webkit/http/method.hpp>
+#include <puffin/webkit/http/status.hpp>
 
-#include <puffin/webkit/middlewares/cookies.hpp>
-#include <puffin/webkit/middlewares/session.hpp>
+#include <cstddef>
+#include <utility>
 
-#include <puffin/webkit/transport/concepts.hpp>
+namespace puffin {
+namespace webkit {
+namespace detail {
 
-#endif // PUFFIN_WEBKIT_HPP
+/// Statuses worth sending an idempotent request again for
+constexpr bool retryable_status(int code) noexcept
+{
+  return code == static_cast<int>(status::bad_gateway) || code == static_cast<int>(status::service_unavailable) ||
+         code == static_cast<int>(status::gateway_timeout);
+}
+
+} // namespace detail
+
+namespace interceptors {
+
+/**
+ * @brief Sends idempotent requests again when the transport fails or the server answers 502, 503 or 504.
+ */
+class retry {
+public:
+  /// Total number of attempts, 3 by default
+  void attempts(std::size_t n) { attempts_ = n == 0 ? 1 : n; }
+  std::size_t attempts() const noexcept { return attempts_; }
+
+  async::async<response> operator()(request& req, next_request next) const
+  {
+    if (!idempotent(req.method()))
+      co_return co_await next(req);
+
+    for (std::size_t attempt = 1;; ++attempt) {
+      auto outcome = co_await async::try_await(next(req));
+
+      if (attempt >= attempts_ || (outcome && !detail::retryable_status(outcome.value->status_code()))) {
+        if (!outcome)
+          outcome.rethrow();
+
+        co_return std::move(*outcome.value);
+      }
+    }
+  }
+
+private:
+  std::size_t attempts_ = 3;
+};
+
+} // namespace interceptors
+} // namespace webkit
+} // namespace puffin
+
+#endif // PUFFIN_WEBKIT_INTERCEPTORS_RETRY_HPP

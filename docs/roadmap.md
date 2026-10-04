@@ -47,6 +47,8 @@
 - [x] Header, method, target and reason validation (no CR, LF or NUL)
 - [x] Router with parameters, 405 + Allow, HEAD falls back to GET
 - [x] Typed context extended by middlewares
+- [x] Async `around` middlewares, matched route reachable from the context
+- [x] Client interceptors (`bearer` with refresh, `retry`)
 - [x] Cookies middleware
 - [x] Session middleware, signed with HMAC-SHA256, expiry checked by the server
 - [x] Set-Cookie validation (no attribute injection)
@@ -63,7 +65,6 @@
 - [ ] `Expect: 100-continue`
 - [ ] Document server and acceptor lifetime
 - [ ] Session key from the OS (`getrandom`, `BCryptGenRandom`) instead of `std::random_device`
-- [ ] Async middlewares
 - [ ] Concurrent client requests (connection pool)
 - [ ] Qt TLS (QSslSocket)
 - [ ] Split `parse_start_line()` and `start_body()` of the parser (clang-tidy exemptions today)

@@ -38,7 +38,9 @@
 #define PUFFIN_WEBKIT_CLIENT_CLIENT_HPP
 
 #include <puffin/async.hpp>
+#include <puffin/webkit/client/interceptor.hpp>
 #include <puffin/webkit/http/errors.hpp>
+#include <puffin/webkit/http/method.hpp>
 #include <puffin/webkit/http/parser.hpp>
 #include <puffin/webkit/http/serializer.hpp>
 #include <puffin/webkit/transport/concepts.hpp>
@@ -73,8 +75,12 @@ struct client_options {
  * The connection is opened on the first request and kept alive. A request failing on a reused
  * connection (closed by the server meanwhile) is retried once on a new one when idempotent.
  * One request at a time: use one client per concurrent task.
+ *
+ * Interceptors run around each request (see interceptor_chain), for instance:
+ *
+ *   basic_client<asio::tcp_connector, interceptors::bearer, interceptors::retry> client(connector, "example.com", 80);
  */
-template<Connector C>
+template<Connector C, typename... Interceptors>
 class basic_client {
 public:
   using connector_type = C;
@@ -82,6 +88,12 @@ public:
 
   basic_client(C connector, std::string host, std::uint16_t port, client_options options = {})
       : connector_(std::move(connector)), host_(std::move(host)), port_(port), options_(std::move(options))
+  {}
+
+  basic_client(C connector, std::string host, std::uint16_t port, client_options options, Interceptors... interceptors)
+    requires(sizeof...(Interceptors) > 0)
+      : connector_(std::move(connector)), host_(std::move(host)), port_(port), options_(std::move(options)),
+        chain_(std::move(interceptors)...)
   {}
 
   /// Host and port are taken from the uri
@@ -95,38 +107,20 @@ public:
 
   ~basic_client() { close(); }
 
-  /// Sends a request and returns its response. Host and Connection headers are filled if missing.
+  /// Sends a request through the interceptors and returns its response
   async::async<response> request(webkit::request req)
   {
-    busy_guard guard(busy_);
-    complete_headers(req);
+    if constexpr (sizeof...(Interceptors) == 0)
+      return transmit(std::move(req));
+    else
+      return intercept(std::move(req));
+  }
 
-    const std::string wire = serialize(req);
-    const bool head = req.method() == "HEAD";
-    const bool reused = stream_.has_value();
-
-    if (!stream_)
-      stream_.emplace(co_await connector_.connect(host_, port_));
-
-    auto first = co_await async::try_await(exchange(wire, head));
-
-    if (first)
-      co_return std::move(*first.value);
-
-    close();
-
-    if (!reused || !idempotent(req.method()))
-      first.rethrow();
-
-    // The server may have closed the kept alive connection meanwhile, retrying on a new one
-    stream_.emplace(co_await connector_.connect(host_, port_));
-
-    try {
-      co_return co_await exchange(wire, head);
-    } catch (...) {
-      close();
-      throw;
-    }
+  /// Access to an interceptor instance, to configure it
+  template<typename I>
+  I& interceptor()
+  {
+    return chain_.template get<I>();
   }
 
   async::async<response> get(std::string target) { return request(webkit::request("GET", std::move(target))); }
@@ -182,6 +176,47 @@ private:
   private:
     bool& busy_;
   };
+
+  async::async<response> intercept(webkit::request req)
+  {
+    // A copy for each attempt: an interceptor may send the request again
+    auto send = [this](webkit::request& r) { return transmit(r); };
+    co_return co_await chain_.send(req, send);
+  }
+
+  /// Sends a request on the connection. Host and Connection headers are filled if missing.
+  async::async<response> transmit(webkit::request req)
+  {
+    busy_guard guard(busy_);
+    complete_headers(req);
+
+    const std::string wire = serialize(req);
+    const bool head = req.method() == "HEAD";
+    const bool reused = stream_.has_value();
+
+    if (!stream_)
+      stream_.emplace(co_await connector_.connect(host_, port_));
+
+    auto first = co_await async::try_await(exchange(wire, head));
+
+    if (first)
+      co_return std::move(*first.value);
+
+    close();
+
+    if (!reused || !idempotent(req.method()))
+      first.rethrow();
+
+    // The server may have closed the kept alive connection meanwhile, retrying on a new one
+    stream_.emplace(co_await connector_.connect(host_, port_));
+
+    try {
+      co_return co_await exchange(wire, head);
+    } catch (...) {
+      close();
+      throw;
+    }
+  }
 
   void complete_headers(webkit::request& req) const
   {
@@ -244,11 +279,6 @@ private:
     return req;
   }
 
-  static bool idempotent(const std::string& method)
-  {
-    return method == "GET" || method == "HEAD" || method == "PUT" || method == "DELETE" || method == "OPTIONS";
-  }
-
 private:
   C connector_;
   std::string host_;
@@ -258,6 +288,7 @@ private:
   std::optional<stream_type> stream_;
   message_reader reader_{options_.read_buffer_size};
   bool busy_ = false;
+  interceptor_chain<Interceptors...> chain_;
 };
 
 } // namespace webkit

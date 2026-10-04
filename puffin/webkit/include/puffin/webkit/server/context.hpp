@@ -39,6 +39,7 @@
 
 #include <puffin/webkit/http/request.hpp>
 #include <puffin/webkit/http/response.hpp>
+#include <puffin/webkit/server/router.hpp>
 
 #include <string>
 #include <string_view>
@@ -92,6 +93,10 @@ public:
 
   void params(std::vector<std::string> params) { params_ = std::move(params); }
 
+  /// The route the request matched, known before the middlewares run. nullptr when none matched (404, 405).
+  const route_info* route() const { return route_; }
+  void route(const route_info* route) { route_ = route; }
+
   /// Explicit access to the data of a middleware, useful when two middlewares expose the same names
   template<typename M>
   middleware_data<M>& data()
@@ -109,6 +114,7 @@ private:
   webkit::request& request_;
   webkit::response& response_;
   std::vector<std::string> params_;
+  const route_info* route_ = nullptr;
 };
 
 } // namespace webkit
