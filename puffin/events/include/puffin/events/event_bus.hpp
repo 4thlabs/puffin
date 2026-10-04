@@ -51,7 +51,7 @@
 
 struct void_t {};
 
-namespace pfn {
+namespace puffin {
 namespace events {
 
 template<typename T, typename = typename T::type>

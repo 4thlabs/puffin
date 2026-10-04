@@ -38,8 +38,11 @@
 #define PUFFIN_IMDB_INMEMORYDATABASE_HPP
 
 #include <puffin/imdb/imdb_traits.hpp>
+#include <algorithm>
+#include <iterator>
 #include <list>
 #include <map>
+#include <memory>
 
 namespace puffin {
 namespace imdb {
@@ -85,7 +88,7 @@ public:
   ~basic_in_memory_database() {}
 
   basic_in_memory_database(const basic_in_memory_database&) = delete;
-  basic_in_memory_database& operator_(const basic_in_memory_database&) = delete;
+  basic_in_memory_database& operator=(const basic_in_memory_database&) = delete;
 
   /**
    * @brief Creates a view based on the the provided request
@@ -127,10 +130,14 @@ public:
   template<typename Iterator>
   void batch_insert(const key_type &key, Iterator begin, Iterator end)
   {
-    auto it = data_.end();
-    it--;
+    // Remember the last existing row (data_ may be empty) to find where the new rows start
+    const bool was_empty = data_.empty();
+    auto last_old = was_empty ? data_.end() : std::prev(data_.end());
+
     std::copy(begin, end, std::back_inserter(data_));
-    std::copy(++it, data_.end(), std::back_inserter((*data_views_)[key]));
+
+    auto first_new = was_empty ? data_.begin() : std::next(last_old);
+    std::copy(first_new, data_.end(), std::back_inserter((*data_views_)[key]));
   }
 
   std::size_t size(const key_type &key)

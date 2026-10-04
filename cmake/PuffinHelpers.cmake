@@ -7,8 +7,6 @@ FetchContent_Declare(
     GIT_SHALLOW ON
 )
 
-FetchContent_MakeAvailable(catch2)
-
 set_property(GLOBAL PROPERTY PUFFIN_TEST_SOURCES "")
 set_property(GLOBAL PROPERTY PUFFIN_TEST_DEPS "")
 
@@ -124,11 +122,8 @@ endfunction()
 # Helper to add main test host application
 #
 function(puffin_main_tests)
-    FetchContent_GetProperties(catch2)
-    if(NOT catch2_POPULATED)
-        FetchContent_Populate(catch2)
-        add_subdirectory(${catch2_SOURCE_DIR} ${catch2_BINARY_DIR})
-    endif()
+    # Catch2 is only fetched when the tests are built, not for projects consuming puffin
+    FetchContent_MakeAvailable(catch2)
     
     get_property(SOURCES GLOBAL PROPERTY PUFFIN_TEST_SOURCES)
     get_property(DEPS GLOBAL PROPERTY PUFFIN_TEST_DEPS)

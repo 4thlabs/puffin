@@ -37,7 +37,7 @@
 #include <puffin/events/event_bus.hpp>
 #include <iostream>
 
-using namespace pfn::events;
+using namespace puffin::events;
 
 struct my_event {};
 struct my_event_2 {};

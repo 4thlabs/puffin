@@ -38,19 +38,19 @@
 #define PUFFIN_REST_CLIENT_HPP
 
 #include <puffin/async.hpp>
+#include <puffin/async/try_await.hpp>
 #include <puffin/rest/codec.hpp>
+#include <puffin/rest/detail/arguments.hpp>
+#include <puffin/rest/detail/client.hpp>
 #include <puffin/rest/dsl.hpp>
 #include <puffin/rest/errors.hpp>
 #include <puffin/webkit/client/client.hpp>
-#include <puffin/webkit/detail/string.hpp>
 #include <puffin/webkit/http/request.hpp>
 #include <puffin/webkit/http/response.hpp>
 
 #include <concepts>
 #include <cstddef>
-#include <exception>
 #include <functional>
-#include <optional>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -101,54 +101,6 @@ public:
 private:
   std::function<async::async<webkit::response>(webkit::request&)> next_;
 };
-
-namespace detail {
-
-template<typename T>
-struct transport_for {
-  using type = T;
-};
-
-template<webkit::Connector C>
-struct transport_for<C> {
-  using type = webkit::basic_client<C>;
-};
-
-/// Number of trailing optional arguments, which callers may omit
-template<typename Values>
-struct trailing_optionals;
-
-template<>
-struct trailing_optionals<typelist<>> : std::integral_constant<std::size_t, 0> {};
-
-template<typename V, typename... Vs>
-struct trailing_optionals<typelist<V, Vs...>>
-    : std::integral_constant<std::size_t, (trailing_optionals<typelist<Vs...>>::value == sizeof...(Vs) &&
-                                           is_optional<V>::value)
-                                              ? sizeof...(Vs) + 1
-                                              : trailing_optionals<typelist<Vs...>>::value> {};
-
-inline void append_query(std::string& target, std::string_view name, const std::string& value)
-{
-  target += target.find('?') == std::string::npos ? '?' : '&';
-  target += webkit::detail::percent_encode(name);
-  target += '=';
-  target += webkit::detail::percent_encode(value);
-}
-
-template<typename Schemes>
-struct for_each_scheme;
-
-template<typename... S>
-struct for_each_scheme<typelist<S...>> {
-  template<typename F>
-  static void apply(F&& f)
-  {
-    (f.template operator()<S>(), ...);
-  }
-};
-
-} // namespace detail
 
 template<typename Client, typename Api, typename... Fixed>
 class scoped_client;
@@ -242,86 +194,17 @@ private:
   template<typename R, typename... A>
   webkit::request build_request(A&&... args) const
   {
-    using values = typename R::values;
-    constexpr std::size_t count = values::size;
-    constexpr std::size_t required = count - detail::trailing_optionals<values>::value;
-
-    static_assert(sizeof...(A) <= count, "too many arguments for this endpoint");
-    static_assert(sizeof...(A) >= required, "missing arguments for this endpoint");
-
-    auto given = std::forward_as_tuple(std::forward<A>(args)...);
-    auto full = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-      return detail::apply_t<std::tuple, values> {argument<detail::at_t<Is, values>, Is>(given)...};
-    }(std::make_index_sequence<count>());
-
-    webkit::request req(std::string(method_name(R::method)), std::string());
-
-    for (const auto& h : headers_)
-      req.headers().add(h.name, h.value);
-
-    std::string target = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-      return R::path_type::format(std::get<Is>(full)...);
-    }(std::make_index_sequence<R::path_type::param_count>());
-
-    [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-      (encode_arg<detail::at_t<Is, typename R::args>>(req, target, std::get<Is>(full)), ...);
-    }(std::make_index_sequence<count>());
-
-    req.target(std::move(target));
-
+    webkit::request req = detail::encode_request<R>(detail::complete_args<R>(std::forward<A>(args)...), headers_);
     using expected = typename R::result_type;
 
     if constexpr (!std::is_void_v<expected>) {
-      using codec = detail::resolve_codec_t<expected, typename R::returns::codec>;
+      using codec = detail::result_codec_t<R>;
 
       if (!req.headers().contains("Accept"))
         req.headers().set("Accept", std::string(codec::content_type));
     }
 
     return req;
-  }
-
-  template<typename V, std::size_t I, typename Given>
-  static V argument(Given& given)
-  {
-    if constexpr (I < std::tuple_size_v<Given>) {
-      using A = std::tuple_element_t<I, Given>;
-      static_assert(std::is_constructible_v<V, A>, "argument type does not match the endpoint");
-      return V(std::forward<A>(std::get<I>(given)));
-    } else {
-      return V {};
-    }
-  }
-
-  template<typename D, typename V>
-  static void encode_arg(webkit::request& req, std::string& target, const V& value)
-  {
-    using element = detail::param_element_t<V>;
-
-    if constexpr (requires { D::index; }) {
-      // Path parameters are already in the target
-    } else if constexpr (detail::is_body<D>::value) {
-      using codec = detail::resolve_codec_t<V, typename D::codec>;
-      req.body(codec::encode(value));
-      req.headers().set("Content-Type", std::string(codec::content_type));
-    } else if constexpr (std::is_same_v<D, header<D::name, V>>) {
-      if constexpr (detail::is_optional<V>::value) {
-        if (value)
-          req.headers().set(std::string(D::name.view()), param_traits<element>::format(*value));
-      } else {
-        req.headers().set(std::string(D::name.view()), param_traits<element>::format(value));
-      }
-    } else { // query
-      if constexpr (detail::is_vector<V>::value) {
-        for (const auto& v : value)
-          detail::append_query(target, D::name.view(), param_traits<element>::format(v));
-      } else if constexpr (detail::is_optional<V>::value) {
-        if (value)
-          detail::append_query(target, D::name.view(), param_traits<element>::format(*value));
-      } else {
-        detail::append_query(target, D::name.view(), param_traits<element>::format(value));
-      }
-    }
   }
 
   template<typename R, std::size_t I>
@@ -347,7 +230,7 @@ private:
       throw http_error(res.status_code(), std::move(res.body()), std::move(res.headers()));
 
     if constexpr (!std::is_void_v<expected>) {
-      using codec = detail::resolve_codec_t<expected, typename R::returns::codec>;
+      using codec = detail::result_codec_t<R>;
       co_return codec::template decode<expected>(res.body());
     }
   }
@@ -355,21 +238,8 @@ private:
   template<typename R>
   async::async<result<typename R::result_type>> try_send(webkit::request req)
   {
-    using expected = typename R::result_type;
-    std::optional<http_error> error;
-
-    try {
-      if constexpr (std::is_void_v<expected>) {
-        co_await send<R>(std::move(req));
-        co_return result<void>();
-      } else {
-        co_return result<expected>(co_await send<R>(std::move(req)));
-      }
-    } catch (const http_error& e) {
-      error = e;
-    }
-
-    co_return result<expected>(std::move(*error));
+    auto outcome = co_await async::try_await(send<R>(std::move(req)));
+    co_return detail::to_result<typename R::result_type>(std::move(outcome));
   }
 
 private:
@@ -456,19 +326,24 @@ public:
     if constexpr (!detail::contains_v<bearer_auth, typename Info::schemes>) {
       co_return co_await next(req);
     } else {
-      req.headers().set("Authorization", "Bearer " + token_);
+      authorize(req);
       webkit::response res = co_await next(req);
 
       if (res.status_code() != static_cast<int>(webkit::status::unauthorized) || !refresh_)
         co_return res;
 
       token_ = co_await refresh_();
-      req.headers().set("Authorization", "Bearer " + token_);
+      authorize(req);
       co_return co_await next(req);
     }
   }
 
 private:
+  void authorize(webkit::request& req) const
+  {
+    req.headers().set("Authorization", param_traits<rest::bearer>::format(rest::bearer {token_}));
+  }
+
   std::string token_;
   std::function<async::async<std::string>()> refresh_;
 };
@@ -489,27 +364,14 @@ public:
       co_return co_await next(req);
     } else {
       for (std::size_t attempt = 1;; ++attempt) {
-        const bool last = attempt >= attempts_;
-        std::exception_ptr error;
-        std::optional<webkit::response> res;
+        auto outcome = co_await async::try_await(next(req));
 
-        try {
-          res.emplace(co_await next(req));
-        } catch (...) {
-          error = std::current_exception();
+        if (attempt >= attempts_ || (outcome && !detail::retryable_status(outcome.value->status_code()))) {
+          if (!outcome)
+            outcome.rethrow();
+
+          co_return std::move(*outcome.value);
         }
-
-        if (error) {
-          if (last)
-            std::rethrow_exception(error);
-
-          continue;
-        }
-
-        int code = res->status_code();
-
-        if (last || (code != 502 && code != 503 && code != 504))
-          co_return std::move(*res);
       }
     }
   }

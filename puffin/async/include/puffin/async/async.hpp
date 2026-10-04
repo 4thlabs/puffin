@@ -71,7 +71,10 @@ public:
         return std::noop_coroutine();
 
       if (p.continuation_executor_ && !(p.continuation_executor_ == p.executor_)) {
-        p.continuation_executor_.post(p.continuation_);
+        // Copies: once posted, the awaiter may resume and destroy this frame while post() runs
+        auto executor = p.continuation_executor_;
+        auto continuation = p.continuation_;
+        executor.post(continuation);
         return std::noop_coroutine();
       }
 

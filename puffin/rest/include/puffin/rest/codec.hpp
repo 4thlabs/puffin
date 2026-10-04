@@ -102,20 +102,14 @@ struct resolve_codec<T, default_codec> {
 template<typename T, typename C>
 using resolve_codec_t = typename resolve_codec<T, C>::type;
 
+/// The codec of the result of a resolved endpoint, when it returns a value
+template<typename R>
+using result_codec_t = resolve_codec_t<typename R::result_type, typename R::returns::codec>;
+
 /// Compares the media types of two Content-Type values, ignoring parameters (charset...)
 inline bool same_media_type(std::string_view a, std::string_view b)
 {
-  auto media = [](std::string_view s) {
-    s = s.substr(0, s.find(';'));
-
-    while (!s.empty() && (s.back() == ' ' || s.back() == '\t'))
-      s.remove_suffix(1);
-
-    while (!s.empty() && (s.front() == ' ' || s.front() == '\t'))
-      s.remove_prefix(1);
-
-    return s;
-  };
+  auto media = [](std::string_view s) { return webkit::detail::trim(s.substr(0, s.find(';'))); };
 
   return webkit::detail::iequals(media(a), media(b));
 }

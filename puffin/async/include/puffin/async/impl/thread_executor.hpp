@@ -45,6 +45,7 @@
 #include <coroutine>
 #include <deque>
 #include <mutex>
+#include <stdexcept>
 #include <thread>
 
 namespace puffin {
@@ -84,6 +85,9 @@ public:
    */
   void run(bool blocking = true)
   {
+    if (thread_.joinable())
+      throw std::logic_error("thread_executor is already running on its own thread");
+
     if (blocking)
       pump();
     else

@@ -42,6 +42,7 @@
 #include <chrono>
 #include <map>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 
@@ -71,8 +72,20 @@ struct cookie {
   bool http_only = false;
 
   /// Value of the Set-Cookie header for this cookie
+  /// Throws std::invalid_argument if the name is not a token, the value has characters outside RFC 6265
+  /// cookie-octets, or path and domain contain ';' or control characters (attribute injection)
   std::string str() const
   {
+    if (!detail::is_token(name) || !detail::is_cookie_value(value))
+      throw std::invalid_argument("invalid cookie name or value");
+
+    auto is_attribute = [](std::string_view a) {
+      return detail::is_field_value(a) && a.find(';') == std::string_view::npos;
+    };
+
+    if (!is_attribute(path) || (domain && !is_attribute(*domain)))
+      throw std::invalid_argument("invalid cookie path or domain");
+
     std::string s = name + "=" + value;
 
     if (!path.empty())

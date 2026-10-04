@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.24)
 
 file(GLOB_RECURSE HEADERS include/*.hpp)
 
@@ -31,7 +31,7 @@ if(PUFFIN_REST_WITH_JSON)
     set(PUFFIN_REST_JSON_DEP "")
 
     if(NOT TARGET nlohmann_json::nlohmann_json AND (BUILD_TESTS OR BUILD_SAMPLES))
-      CPMAddPackage("gh:nlohmann/json@3.10.5")
+      CPMAddPackage("gh:nlohmann/json@3.12.0")
     endif()
   endif()
 

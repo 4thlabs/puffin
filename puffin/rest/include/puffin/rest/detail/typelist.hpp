@@ -37,6 +37,7 @@
 #ifndef PUFFIN_REST_DETAIL_TYPELIST_HPP
 #define PUFFIN_REST_DETAIL_TYPELIST_HPP
 
+#include <array>
 #include <cstddef>
 #include <type_traits>
 
@@ -127,8 +128,29 @@ struct contains<T, typelist<Ts...>> : std::bool_constant<(std::is_same_v<T, Ts> 
 template<typename T, typename List>
 inline constexpr bool contains_v = contains<T, List>::value;
 
-template<typename T>
-struct always_false : std::false_type {};
+/// Index of the first true flag, N if none
+template<std::size_t N>
+constexpr std::size_t first_true(const std::array<bool, N>& a)
+{
+  for (std::size_t i = 0; i < N; ++i) {
+    if (a[i])
+      return i;
+  }
+
+  return N;
+}
+
+/// Number of true flags
+template<std::size_t N>
+constexpr std::size_t count_true(const std::array<bool, N>& a)
+{
+  std::size_t n = 0;
+
+  for (bool b : a)
+    n += b;
+
+  return n;
+}
 
 } // namespace detail
 } // namespace rest

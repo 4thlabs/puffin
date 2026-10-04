@@ -41,6 +41,7 @@
 
 #include <algorithm>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -70,15 +71,23 @@ public:
   headers() = default;
 
   headers(std::initializer_list<header> fields)
-      : fields_(fields)
-  {}
+  {
+    for (const auto& f : fields)
+      add(f.name, f.value);
+  }
 
-  /// Appends a field, keeping existing fields with the same name
-  void add(std::string name, std::string value) { fields_.push_back({std::move(name), std::move(value)}); }
+  /// Appends a field, keeping existing fields with the same name.
+  /// Throws std::invalid_argument if the name is not a token or the value contains CR, LF, NUL or other controls.
+  void add(std::string name, std::string value)
+  {
+    validate(name, value);
+    fields_.push_back({std::move(name), std::move(value)});
+  }
 
   /// Replaces every field with this name by a single one
   void set(std::string name, std::string value)
   {
+    validate(name, value);
     erase(name);
     add(std::move(name), std::move(value));
   }
@@ -155,6 +164,15 @@ public:
   const_iterator end() const noexcept { return fields_.end(); }
 
 private:
+  static void validate(std::string_view name, std::string_view value)
+  {
+    if (!detail::is_token(name))
+      throw std::invalid_argument("invalid header name");
+
+    if (!detail::is_field_value(value))
+      throw std::invalid_argument("invalid header value");
+  }
+
   container_type fields_;
 };
 

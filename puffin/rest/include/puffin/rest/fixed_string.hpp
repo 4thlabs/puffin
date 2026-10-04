@@ -38,6 +38,7 @@
 #define PUFFIN_REST_FIXED_STRING_HPP
 
 #include <cstddef>
+#include <span>
 #include <string_view>
 
 namespace puffin {
@@ -114,6 +115,19 @@ constexpr auto join_paths()
     --buffer.size;
 
   return buffer;
+}
+
+/// True if two of the names are equal
+constexpr bool has_duplicates(std::span<const std::string_view> names)
+{
+  for (std::size_t i = 0; i < names.size(); ++i) {
+    for (std::size_t j = 0; j < i; ++j) {
+      if (names[i] == names[j])
+        return true;
+    }
+  }
+
+  return false;
 }
 
 } // namespace detail

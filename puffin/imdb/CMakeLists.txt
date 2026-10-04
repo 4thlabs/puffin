@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.24)
 
 file(GLOB_RECURSE HEADERS include/*.hpp)
 
@@ -12,7 +12,7 @@ puffin_declare_module(
 )
 
 if (BUILD_TESTS)
-  CPMAddPackage("gh:nlohmann/json@3.10.5")
+  CPMAddPackage("gh:nlohmann/json@3.12.0")
 
   puffin_declare_tests(
     SOURCES

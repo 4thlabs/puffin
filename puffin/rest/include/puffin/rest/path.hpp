@@ -45,9 +45,9 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
-#include <tuple>
 #include <utility>
 
 namespace puffin {
@@ -104,6 +104,46 @@ constexpr param_kind path_param_kind(std::string_view type)
   return param_kind::string;
 }
 
+/// Parses the parameter opening at path[open], returns its description and the position of its '}'
+constexpr std::pair<path_param_info, std::size_t> parse_path_param(std::string_view path, std::size_t open)
+{
+  std::size_t close = path.find('}', open);
+
+  if (close == std::string_view::npos)
+    path_template_error("unclosed '{' in path template");
+
+  std::string_view param = path.substr(open + 1, close - open - 1);
+
+  if (param.find('{') != std::string_view::npos)
+    path_template_error("nested '{' in path template");
+
+  std::size_t colon = param.find(':');
+  std::string_view name = param.substr(0, colon);
+
+  if (name.empty())
+    path_template_error("path parameter without name");
+
+  path_param_info info {open + 1, name.size(),
+                        path_param_kind(colon == std::string_view::npos ? std::string_view() : param.substr(colon + 1))};
+
+  if (info.kind == param_kind::path && close + 1 != path.size())
+    path_template_error("a path parameter must be the last element of the path");
+
+  return {info, close};
+}
+
+template<std::size_t Count>
+constexpr void check_unique_names(std::string_view path, const std::array<path_param_info, Count>& params)
+{
+  std::array<std::string_view, Count> names {};
+
+  for (std::size_t i = 0; i < Count; ++i)
+    names[i] = path.substr(params[i].name_begin, params[i].name_size);
+
+  if (has_duplicates(names))
+    path_template_error("duplicate path parameter name");
+}
+
 template<std::size_t Count>
 constexpr std::array<path_param_info, Count> parse_path_params(std::string_view path)
 {
@@ -114,41 +154,14 @@ constexpr std::array<path_param_info, Count> parse_path_params(std::string_view 
     if (path[i] == '}')
       path_template_error("unexpected '}' in path template");
 
-    if (path[i] != '{')
-      continue;
-
-    std::size_t close = path.find('}', i);
-
-    if (close == std::string_view::npos)
-      path_template_error("unclosed '{' in path template");
-
-    std::string_view param = path.substr(i + 1, close - i - 1);
-
-    if (param.find('{') != std::string_view::npos)
-      path_template_error("nested '{' in path template");
-
-    std::size_t colon = param.find(':');
-    std::string_view name = param.substr(0, colon);
-
-    if (name.empty())
-      path_template_error("path parameter without name");
-
-    for (std::size_t p = 0; p < index; ++p) {
-      if (path.substr(params[p].name_begin, params[p].name_size) == name)
-        path_template_error("duplicate path parameter name");
+    if (path[i] == '{') {
+      auto [info, close] = parse_path_param(path, i);
+      params[index++] = info;
+      i = close;
     }
-
-    params[index].name_begin = i + 1;
-    params[index].name_size = name.size();
-    params[index].kind = path_param_kind(colon == std::string_view::npos ? std::string_view() : param.substr(colon + 1));
-
-    if (params[index].kind == param_kind::path && close + 1 != path.size())
-      path_template_error("a path parameter must be the last element of the path");
-
-    ++index;
-    i = close;
   }
 
+  check_unique_names(path, params);
   return params;
 }
 

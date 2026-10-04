@@ -36,16 +36,19 @@
 
 
 #include <puffin/async.hpp>
-#include <puffin/async/asio.hpp>
+#include <puffin/async/adapter/asio.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <asio/ip/tcp.hpp>
 #include <asio/read.hpp>
+#include <asio/executor_work_guard.hpp>
 #include <asio/write.hpp>
 
 #include <array>
 #include <chrono>
 #include <string>
+#include <thread>
+#include <vector>
 
 using puffin::async::any_executor;
 using puffin::async::async;
@@ -152,6 +155,45 @@ TEST_CASE("asio adapter", "[async][asio]")
     context.run();
     REQUIRE(error);
     REQUIRE_THROWS_AS(std::rethrow_exception(error), asio::system_error);
+  }
+
+  SECTION("tasks switching between io_contexts")
+  {
+    // Owned executors (rvalues): the continuation is posted back across contexts
+    asio::io_context other;
+    auto guard = asio::make_work_guard(other);
+    std::thread other_thread([&] { other.run(); });
+
+    int count = 0;
+
+    auto hop = [&]() -> async<int> {
+      co_await puffin::async::schedule_on(pa::executor { other });
+      co_return 1;
+    };
+
+    // context has no pending work while the tasks run on other, keep it alive until done
+    auto context_guard = asio::make_work_guard(context);
+
+    co_spawn(
+        pa::executor { context },
+        [&]() -> async<void> {
+          std::vector<async<int>> tasks;
+          for (int i = 0; i < 100; ++i)
+            tasks.push_back(hop());
+
+          for (int v : co_await when_all(std::move(tasks)))
+            count += v;
+
+          for (int i = 0; i < 100; ++i)
+            count += co_await hop();
+        },
+        [&](std::exception_ptr) { context_guard.reset(); });
+
+    context.run();
+    guard.reset();
+    other_thread.join();
+
+    REQUIRE(count == 200);
   }
 
   SECTION("executor equality")

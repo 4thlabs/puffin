@@ -44,6 +44,7 @@
 #include <puffin/rest/path.hpp>
 #include <puffin/webkit/http/status.hpp>
 
+#include <array>
 #include <cstddef>
 #include <string>
 #include <string_view>
@@ -360,16 +361,8 @@ private:
   template<typename... Rs>
   static constexpr bool unique_names(detail::typelist<Rs...>)
   {
-    constexpr std::string_view names[] = {std::string_view(), Rs::name...};
-
-    for (std::size_t i = 1; i < sizeof(names) / sizeof(names[0]); ++i) {
-      for (std::size_t j = 1; j < i; ++j) {
-        if (names[i] == names[j])
-          return false;
-      }
-    }
-
-    return true;
+    constexpr std::array<std::string_view, sizeof...(Rs)> names = {Rs::name...};
+    return !detail::has_duplicates(names);
   }
 
   static_assert(unique_names(endpoints {}), "two endpoints of the api have the same name");

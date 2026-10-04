@@ -34,8 +34,8 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PUFFIN_WEBKIT_QT_HPP
-#define PUFFIN_WEBKIT_QT_HPP
+#ifndef PUFFIN_WEBKIT_ADAPTER_QT_HPP
+#define PUFFIN_WEBKIT_ADAPTER_QT_HPP
 
 // Qt 6 transport for puffin::webkit (target puffin::webkit_qt). Streams, acceptors and connectors
 // must be used from the thread their Qt objects live in, typically with puffin::async::qt::executor.
@@ -264,4 +264,4 @@ static_assert(Connector<tcp_connector>);
 } // namespace webkit
 } // namespace puffin
 
-#endif // PUFFIN_WEBKIT_QT_HPP
+#endif // PUFFIN_WEBKIT_ADAPTER_QT_HPP

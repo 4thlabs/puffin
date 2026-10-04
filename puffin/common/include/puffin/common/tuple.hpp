@@ -39,7 +39,7 @@
 
 #include <tuple>
 
-namespace restpp {
+namespace puffin::common {
 
 template<typename Search, size_t Index, typename First, typename... Types>
 struct get_internal {

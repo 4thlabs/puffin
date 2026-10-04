@@ -63,7 +63,7 @@ struct json_contains {
       return false;
 
     return std::find_if(v1[key].begin(), v1[key].end(), [&](const json& j) {
-      return j.get<std::string>().compare(text) == 0;
+      return j.is_string() ? j.get<std::string>().compare(text) == 0 : false;
     }) != std::end(v1[key]);
   }
 };

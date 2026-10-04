@@ -35,9 +35,9 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <puffin/async.hpp>
-#include <puffin/async/asio.hpp>
+#include <puffin/async/adapter/asio.hpp>
 #include <puffin/webkit.hpp>
-#include <puffin/webkit/asio.hpp>
+#include <puffin/webkit/adapter/asio.hpp>
 
 #include <asio/signal_set.hpp>
 

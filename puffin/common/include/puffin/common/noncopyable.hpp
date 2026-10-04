@@ -37,7 +37,7 @@
 #ifndef PFN_NONCOPYABLE_HPP
 #define PFN_NONCOPYABLE_HPP
 
-namespace pfn {
+namespace puffin::common {
 
 ///
 /// Disallow copy and assign on child objects

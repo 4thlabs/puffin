@@ -38,28 +38,28 @@
 #include <iostream>
 #include <puffin/maths/matrix4.hpp>
 
-pfn::matrix4f identity {
+puffin::maths::matrix4f identity {
   1.0, 0.0, 0.0, 0.0,
   0.0, 1.0, 0.0, 0.0,
   0.0, 0.0, 1.0, 0.0,
   0.0, 0.0, 0.0, 1.0
 };
 
-pfn::matrix4f t1 {
+puffin::maths::matrix4f t1 {
   5.0, 3.2, -4.1, 6.9,
   2.0, -4.0, 3.0, 2.3,
   7.0, 3.0, -3.4, 2.0,
   -8.0, 2.0, 5.2, 4.1
 };
 
-pfn::matrix4f t2 {
+puffin::maths::matrix4f t2 {
   3.0, 2.6, -7.1, -3.9,
   -6.0, 2.1, 3.2, 8.0,
   5.0, 4.7, 7.2, -6.0,
   3.0, 7.0, 3.5, 6.0
 };
 
-pfn::matrix4f t3 {
+puffin::maths::matrix4f t3 {
   -4.0, 48.75, -30.63, 72.1,
   51.9, 27.0, 2.65, -44.0,
   -8.0, 22.52, -57.58, 29.1,
@@ -68,13 +68,13 @@ pfn::matrix4f t3 {
 
 TEST_CASE("matrix operations", "[maths][matrix]") {
   SECTION("equality") {
-    pfn::matrix4f m;
+    puffin::maths::matrix4f m;
 
     REQUIRE(m == identity);
   }
 
   SECTION("multiplication") {
-    pfn::matrix4f m = t1 * t2;
+    puffin::maths::matrix4f m = t1 * t2;
     std::cout << m << std::endl;
     //REQUIRE(m == t3);
   }

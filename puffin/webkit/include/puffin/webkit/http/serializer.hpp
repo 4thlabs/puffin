@@ -114,12 +114,17 @@ inline std::string serialize(const request& req)
   return out;
 }
 
+struct serialize_options {
+  /// Writes the headers only, as for a response to HEAD: they still describe the body (Content-Length...)
+  bool omit_body = false;
+};
+
 /**
  * @brief Serializes a response to its wire format.
  *
  * Content-Length is always added when no framing header was set, except for statuses that can't have a body.
  */
-inline std::string serialize(const response& res)
+inline std::string serialize(const response& res, serialize_options options = {})
 {
   const auto& h = res.headers();
   int code = res.status_code();
@@ -142,7 +147,7 @@ inline std::string serialize(const response& res)
 
   out += "\r\n";
 
-  if (!bodyless)
+  if (!bodyless && !options.omit_body)
     detail::append_body(out, h, res.body());
 
   return out;

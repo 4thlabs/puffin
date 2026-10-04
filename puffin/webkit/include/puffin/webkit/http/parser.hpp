@@ -59,6 +59,8 @@ enum class parse_status {
 enum class parse_error {
   none,
   bad_start_line,
+  bad_line_ending,
+  uri_too_long,
   bad_version,
   bad_status_code,
   bad_header,
@@ -78,6 +80,7 @@ struct parse_result {
 struct parser_limits {
   std::size_t max_header_size = 64 * 1024;      ///< Start line and headers
   std::size_t max_body_size = 8 * 1024 * 1024;
+  std::size_t max_target_size = 4 * 1024;        ///< Request target, longer ones are rejected (414)
 };
 
 /**
@@ -232,6 +235,11 @@ private:
       return std::nullopt;
     }
 
+    if (!counts_in_header && lf > max_chunk_line_size) {
+      fail(parse_error::bad_chunk);
+      return std::nullopt;
+    }
+
     pos_ += lf + 1;
 
     if (counts_in_header) {
@@ -245,37 +253,15 @@ private:
 
     std::string_view line = pending.substr(0, lf);
 
-    if (!line.empty() && line.back() == '\r')
+    if (!line.empty() && line.back() == '\r') {
       line.remove_suffix(1);
+    } else if constexpr (is_request) {
+      // A bare LF is tolerated by RFC 9112 but read differently by proxies: request smuggling
+      fail(parse_error::bad_line_ending);
+      return std::nullopt;
+    }
 
     return line;
-  }
-
-  static bool is_token_char(char c)
-  {
-    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))
-      return true;
-
-    switch (c) {
-      case '!': case '#': case '$': case '%': case '&': case '\'': case '*': case '+':
-      case '-': case '.': case '^': case '_': case '`': case '|': case '~':
-        return true;
-      default:
-        return false;
-    }
-  }
-
-  static bool is_token(std::string_view s)
-  {
-    if (s.empty())
-      return false;
-
-    for (char c : s) {
-      if (!is_token_char(c))
-        return false;
-    }
-
-    return true;
   }
 
   static std::optional<version> parse_version(std::string_view s)
@@ -289,7 +275,8 @@ private:
     return version{s[5] - '0', s[7] - '0'};
   }
 
-  bool parse_start_line()
+  // TODO: Split request and response handling, see docs/roadmap.md
+  bool parse_start_line() // NOLINT(readability-function-size,readability-function-cognitive-complexity)
   {
     auto line = next_line(true);
 
@@ -312,8 +299,11 @@ private:
       auto target = line->substr(sp1 + 1, sp2 - sp1 - 1);
       auto v = parse_version(line->substr(sp2 + 1));
 
-      if (!is_token(method) || target.empty() || target.find(' ') != std::string_view::npos)
+      if (!detail::is_token(method) || !detail::is_target(target))
         return fail(parse_error::bad_start_line);
+
+      if (target.size() > limits_.max_target_size)
+        return fail(parse_error::uri_too_long);
 
       if (!v)
         return fail(parse_error::bad_version);
@@ -344,8 +334,13 @@ private:
       if (!value || *value < 100)
         return fail(parse_error::bad_status_code);
 
+      auto reason = rest.size() > 4 ? rest.substr(4) : std::string_view();
+
+      if (!detail::is_field_value(reason))
+        return fail(parse_error::bad_start_line);
+
       message_.version(*v);
-      message_.status(static_cast<int>(*value), std::string(rest.size() > 4 ? rest.substr(4) : std::string_view()));
+      message_.status(static_cast<int>(*value), std::string(reason));
     }
 
     state_ = state::headers;
@@ -365,10 +360,16 @@ private:
 
     auto name = line.substr(0, colon);
 
-    if (!is_token(name))
+    if (!detail::is_token(name))
       return fail(parse_error::bad_header);
 
-    target.add(std::string(name), std::string(detail::trim(line.substr(colon + 1))));
+    auto value = detail::trim(line.substr(colon + 1));
+
+    // Lone CR, NUL and other controls in values are rejected (smuggling, injection)
+    if (!detail::is_field_value(value))
+      return fail(parse_error::bad_header);
+
+    target.add(std::string(name), std::string(value));
     return true;
   }
 
@@ -385,7 +386,8 @@ private:
     return start_body();
   }
 
-  bool start_body()
+  // TODO: Split request and response framing, see docs/roadmap.md
+  bool start_body() // NOLINT(readability-function-size,readability-function-cognitive-complexity)
   {
     const auto& h = message_.headers();
 
@@ -493,7 +495,8 @@ private:
       return true;
     }
 
-    if (message_.body().size() + *size > limits_.max_body_size)
+    // body size never exceeds the limit, so this can't overflow unlike body size + chunk size
+    if (*size > limits_.max_body_size - message_.body().size())
       return fail(parse_error::body_too_large);
 
     remaining_ = *size;
@@ -542,7 +545,7 @@ private:
 
   bool parse_body_until_eof()
   {
-    if (message_.body().size() + (buffer_.size() - pos_) > limits_.max_body_size)
+    if (buffer_.size() - pos_ > limits_.max_body_size - message_.body().size())
       return fail(parse_error::body_too_large);
 
     take(buffer_.size() - pos_);

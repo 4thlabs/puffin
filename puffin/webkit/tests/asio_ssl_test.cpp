@@ -35,8 +35,8 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <puffin/async.hpp>
-#include <puffin/async/asio.hpp>
-#include <puffin/webkit/asio_ssl.hpp>
+#include <puffin/async/adapter/asio.hpp>
+#include <puffin/webkit/adapter/asio_ssl.hpp>
 #include <puffin/webkit/client/client.hpp>
 #include <puffin/webkit/server/server.hpp>
 #include <catch2/catch_test_macros.hpp>

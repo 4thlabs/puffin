@@ -35,9 +35,9 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <puffin/async.hpp>
-#include <puffin/async/qt.hpp>
+#include <puffin/async/adapter/qt.hpp>
 #include <puffin/webkit/client/client.hpp>
-#include <puffin/webkit/qt.hpp>
+#include <puffin/webkit/adapter/qt.hpp>
 #include <puffin/webkit/server/server.hpp>
 #include <catch2/catch_test_macros.hpp>
 

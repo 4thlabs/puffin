@@ -38,31 +38,22 @@
 #define PUFFIN_WEBKIT_SERVER_SERVER_HPP
 
 #include <puffin/async.hpp>
-#include <puffin/webkit/http/parser.hpp>
-#include <puffin/webkit/http/serializer.hpp>
+#include <puffin/webkit/detail/string.hpp>
+#include <puffin/webkit/server/connection.hpp>
 #include <puffin/webkit/server/context.hpp>
 #include <puffin/webkit/server/middleware.hpp>
 #include <puffin/webkit/server/router.hpp>
 #include <puffin/webkit/transport/concepts.hpp>
 
-#include <algorithm>
 #include <concepts>
-#include <exception>
 #include <functional>
 #include <optional>
-#include <span>
 #include <string>
 #include <type_traits>
 #include <utility>
-#include <vector>
 
 namespace puffin {
 namespace webkit {
-
-struct server_options {
-  parser_limits limits;
-  std::size_t read_buffer_size = 16 * 1024;
-};
 
 /**
  * @brief HTTP/1.1 server, written with coroutines over any transport satisfying the Stream and
@@ -142,29 +133,10 @@ public:
   template<Acceptor A>
   async::async<void> listen(A& acceptor)
   {
-    using stream_type = accepted_stream_t<A>;
-
     async::any_executor executor = co_await async::this_executor;
 
-    for (;;) {
-      std::optional<stream_type> stream;
-      std::exception_ptr error;
-
-      try {
-        stream.emplace(co_await acceptor.accept());
-      } catch (...) {
-        error = std::current_exception();
-      }
-
-      if (error) {
-        if (!acceptor.is_open())
-          co_return;
-
-        std::rethrow_exception(error);
-      }
-
-      async::co_spawn(executor, [this, s = std::move(*stream)]() mutable { return serve(std::move(s)); });
-    }
+    while (auto stream = co_await accept(acceptor))
+      async::co_spawn(executor, serve(std::move(*stream)));
   }
 
   /**
@@ -174,113 +146,68 @@ public:
   template<Stream S>
   async::async<void> serve(S stream)
   {
-    request_parser parser(options_.limits);
-    std::vector<char> buffer(options_.read_buffer_size);
-    std::string pending; // Bytes received after the current request (pipelining)
-
-    try {
-      for (;;) {
-        parse_status status = parse_status::need_more;
-
-        if (!pending.empty()) {
-          auto result = parser.feed(pending);
-          pending.erase(0, result.consumed);
-          status = result.status;
-        }
-
-        while (status == parse_status::need_more) {
-          std::size_t n = co_await stream.read_some(std::span<char>(buffer));
-
-          if (n == 0) { // Closed by the client
-            stream.close();
-            co_return;
-          }
-
-          auto result = parser.feed(std::string_view(buffer.data(), n));
-
-          if (result.status == parse_status::done)
-            pending.append(buffer.data() + result.consumed, n - result.consumed);
-
-          status = result.status;
-        }
-
-        response res;
-        bool keep_alive = false;
-        bool head = false;
-
-        if (status == parse_status::error) {
-          res = error_response(parser.error());
-        } else {
-          request req = parser.release();
-          head = req.method() == "HEAD";
-          keep_alive = req.keep_alive();
-
-          co_await handle(req, res);
-
-          if (res.headers().has_token("Connection", "close"))
-            keep_alive = false;
-          else if (keep_alive && req.version() < http_1_1)
-            res.headers().set("Connection", "keep-alive");
-        }
-
-        if (!keep_alive)
-          res.headers().set("Connection", "close");
-
-        std::string wire = serialize(res);
-
-        if (head) // Same headers as GET, without the body
-          wire.resize(wire.find("\r\n\r\n") + 4);
-
-        co_await stream.write(std::span<const char>(wire));
-
-        if (!keep_alive) {
-          stream.close();
-          co_return;
-        }
-      }
-    } catch (...) {
-      stream.close();
-    }
+    basic_connection<S, basic_server> connection(std::move(stream), options_, *this);
+    co_await connection.run();
   }
 
   /**
-   * @brief Runs the middlewares and the matching route for a request, without any I/O
+   * @brief Runs the middlewares and the matching route for a request, without any I/O.
+   *        Exceptions from middlewares and handlers become a 500.
    */
   async::async<void> handle(request& req, response& res)
   {
     context_type ctx(req, res);
     std::size_t entered = 0;
-    bool failed = false;
 
     try {
-      if (chain_.before(ctx, entered)) {
-        auto match = router_.find(req.method(), req.path());
-
-        if (match) {
-          ctx.params(std::move(match.params));
-          co_await (*match.handler)(ctx);
-        } else if (!match.allowed_methods.empty()) {
-          res.status(status::method_not_allowed);
-          res.headers().set("Allow", join(match.allowed_methods));
-        } else {
-          res.status(status::not_found);
-        }
-      }
+      if (chain_.before(ctx, entered))
+        co_await dispatch(ctx);
     } catch (...) {
-      failed = true;
+      fail(res);
     }
-
-    if (failed)
-      res = response(status::internal_server_error);
 
     try {
       chain_.after(ctx, entered);
     } catch (...) {
-      res = response(status::internal_server_error);
+      fail(res);
     }
   }
 
 private:
+  /// The next connection, nullopt once the acceptor is closed
+  template<Acceptor A>
+  static async::async<std::optional<accepted_stream_t<A>>> accept(A& acceptor)
+  {
+    try {
+      co_return co_await acceptor.accept();
+    } catch (...) {
+      if (acceptor.is_open())
+        throw;
+    }
+
+    co_return std::nullopt;
+  }
+
+  /// Calls the route matching the request, or answers 404 / 405
+  async::async<void> dispatch(context_type& ctx)
+  {
+    auto match = router_.find(ctx.request().method(), ctx.request().path());
+
+    if (match) {
+      ctx.params(std::move(match.params));
+      co_await (*match.handler)(ctx);
+    } else if (!match.allowed_methods.empty()) {
+      ctx.response().status(status::method_not_allowed);
+      ctx.response().headers().set("Allow", detail::join(match.allowed_methods, ", "));
+    } else {
+      ctx.response().status(status::not_found);
+    }
+  }
+
+  /// Replaces the response after a middleware or handler failure
+  static void fail(response& res) { res = response(status::internal_server_error); }
+
+  /// Wraps synchronous handlers into coroutines, so the router stores a single handler type
   template<typename F>
   static handler_type make_handler(F handler)
   {
@@ -294,32 +221,6 @@ private:
         handler(ctx);
         co_return;
       };
-    }
-  }
-
-  static std::string join(const std::vector<std::string>& values)
-  {
-    std::string s;
-
-    for (std::size_t i = 0; i < values.size(); ++i) {
-      if (std::find(values.begin(), values.begin() + i, values[i]) != values.begin() + i)
-        continue;
-
-      if (!s.empty())
-        s += ", ";
-
-      s += values[i];
-    }
-
-    return s;
-  }
-
-  static response error_response(parse_error e)
-  {
-    switch (e) {
-      case parse_error::header_too_large: return response(status::request_header_fields_too_large);
-      case parse_error::body_too_large: return response(status::payload_too_large);
-      default: return response(status::bad_request);
     }
   }
 

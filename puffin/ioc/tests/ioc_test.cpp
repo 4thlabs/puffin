@@ -40,7 +40,7 @@
 #include <puffin/ioc/ioc.hpp>
 
 template<typename... Args>
-class cont : public pfn::ioc::container<Args...> {
+class cont : public puffin::ioc::container<Args...> {
 public:
 
 };
@@ -68,10 +68,10 @@ public:
 };
 
 template<>
-struct pfn::ioc::dependencies<obj2> : pfn::ioc::bind<obj1> {};
+struct puffin::ioc::dependencies<obj2> : puffin::ioc::bind<obj1> {};
 
 template<>
-struct pfn::ioc::dependencies<obj3> : pfn::ioc::bind<obj1, obj2> {};
+struct puffin::ioc::dependencies<obj3> : puffin::ioc::bind<obj1, obj2> {};
 
 cont<obj1, obj2, obj3> c;
 

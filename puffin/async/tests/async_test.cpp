@@ -271,6 +271,19 @@ TEST_CASE("async", "[async]")
     REQUIRE(sync_wait(executor, all()));
   }
 
+  SECTION("try_await returns the value or the exception")
+  {
+    auto value = sync_wait(try_await(answer()));
+    REQUIRE(value);
+    REQUIRE(*value.value == 42);
+
+    auto error = sync_wait(try_await(throwing()));
+    REQUIRE_FALSE(error);
+    REQUIRE_THROWS_AS(error.rethrow(), std::runtime_error);
+
+    REQUIRE(sync_wait(try_await(nothing())));
+  }
+
   SECTION("from_callback")
   {
     thread_executor executor;

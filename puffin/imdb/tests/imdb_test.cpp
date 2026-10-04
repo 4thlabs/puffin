@@ -96,6 +96,16 @@ TEST_CASE("imbd") {
     REQUIRE(db.row("doc", 5)["number"] == 3);
   }
 
+  SECTION("Can batch insert into an empty database") {
+    puffin::imdb::in_memory_database<std::string, json> empty;
+    std::list<json> l = {sample, sample2};
+    empty.batch_insert("doc", l.begin(), l.end());
+
+    REQUIRE(empty.size("doc") == 2);
+    REQUIRE(empty.row("doc", 0)["number"] == 1);
+    REQUIRE(empty.row("doc", 1)["number"] == 2);
+  }
+
   SECTION("Can access data") {
     REQUIRE_THROWS(db.row("doc", 4));
 
@@ -196,6 +206,7 @@ TEST_CASE("imbd") {
     });
 
     REQUIRE_THROWS(db.row("doc_index_uuid", "5"));
+    REQUIRE_THROWS(db.row("doc_index_uui", "2"));
 
     auto& value = db.row("doc_index_uuid", "2");
 

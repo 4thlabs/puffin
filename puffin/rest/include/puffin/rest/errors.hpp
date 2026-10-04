@@ -37,6 +37,7 @@
 #ifndef PUFFIN_REST_ERRORS_HPP
 #define PUFFIN_REST_ERRORS_HPP
 
+#include <puffin/async/try_await.hpp>
 #include <puffin/webkit/http/headers.hpp>
 #include <puffin/webkit/http/status.hpp>
 
@@ -97,7 +98,6 @@ public:
   using value_type = T;
 
   result(T value)
-    requires(!std::is_void_v<T>)
       : state_(std::in_place_index<0>, std::move(value))
   {}
 
@@ -152,6 +152,21 @@ public:
 private:
   std::optional<http_error> error_;
 };
+
+namespace detail {
+
+/// The http_error of a failed outcome; any other exception is rethrown
+template<typename V>
+http_error http_error_of(const async::outcome<V>& outcome)
+{
+  try {
+    outcome.rethrow();
+  } catch (const http_error& e) {
+    return e;
+  }
+}
+
+} // namespace detail
 
 } // namespace rest
 } // namespace puffin

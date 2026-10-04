@@ -131,8 +131,7 @@ public:
     if constexpr (std::is_same<Value, Proj>::value) {
       return res;
     } else {
-      auto t = res | std::views::transform(fn_transform_);
-      return std::vector<Proj>(t.begin(), t.end());
+      return res | std::views::transform(fn_transform_) | puffin::ranges::to_vector();
     }
   }
 

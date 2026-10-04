@@ -38,6 +38,7 @@
 #define PUFFIN_REST_PARAMS_HPP
 
 #include <puffin/rest/fixed_string.hpp>
+#include <puffin/webkit/detail/string.hpp>
 
 #include <charconv>
 #include <concepts>
@@ -72,23 +73,7 @@ concept Param = requires(std::string_view text, const T& value) {
 };
 
 template<typename T>
-struct param_traits<T, std::enable_if_t<std::is_integral_v<T> && !std::is_same_v<T, bool>>> {
-  static std::optional<T> parse(std::string_view text)
-  {
-    T value {};
-    auto [end, ec] = std::from_chars(text.data(), text.data() + text.size(), value);
-
-    if (ec != std::errc() || end != text.data() + text.size() || text.empty())
-      return std::nullopt;
-
-    return value;
-  }
-
-  static std::string format(T value) { return std::to_string(value); }
-};
-
-template<typename T>
-struct param_traits<T, std::enable_if_t<std::is_floating_point_v<T>>> {
+struct param_traits<T, std::enable_if_t<std::is_arithmetic_v<T> && !std::is_same_v<T, bool>>> {
   static std::optional<T> parse(std::string_view text)
   {
     T value {};
@@ -167,20 +152,16 @@ template<>
 struct param_traits<bearer> {
   static std::optional<bearer> parse(std::string_view text)
   {
-    constexpr std::string_view scheme = "Bearer ";
-
-    if (text.size() <= scheme.size())
+    if (text.size() <= scheme.size() || !webkit::detail::iequals(text.substr(0, scheme.size()), scheme))
       return std::nullopt;
-
-    for (std::size_t i = 0; i < scheme.size(); ++i) {
-      if ((text[i] | 0x20) != (scheme[i] | 0x20))
-        return std::nullopt;
-    }
 
     return bearer {std::string(text.substr(scheme.size()))};
   }
 
-  static std::string format(const bearer& value) { return "Bearer " + value.token; }
+  static std::string format(const bearer& value) { return std::string(scheme) + value.token; }
+
+private:
+  static constexpr std::string_view scheme = "Bearer ";
 };
 
 namespace detail {

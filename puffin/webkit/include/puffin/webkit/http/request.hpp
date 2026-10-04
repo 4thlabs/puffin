@@ -41,6 +41,7 @@
 #include <puffin/webkit/http/version.hpp>
 #include <puffin/webkit/uri/uri.hpp>
 
+#include <stdexcept>
 #include <string>
 #include <string_view>
 
@@ -54,24 +55,39 @@ class request {
 public:
   request() = default;
 
+  /// Throws std::invalid_argument if the method is not a token or the target contains spaces or controls
   request(std::string method, std::string target)
-      : method_(std::move(method)), target_(std::move(target))
-  {}
+  {
+    this->method(std::move(method));
+    this->target(std::move(target));
+  }
 
   /// Builds a request for an absolute uri, the Host header is filled from it
   template<typename P>
   request(std::string method, const basic_uri<P>& uri)
-      : method_(std::move(method)), target_(uri.target())
+      : request(std::move(method), uri.target())
   {
     headers_.set("Host", uri.has_explicit_port() ? uri.host() + ":" + std::to_string(uri.port()) : uri.host());
   }
 
   const std::string& method() const { return method_; }
-  void method(std::string method) { method_ = std::move(method); }
+  void method(std::string method)
+  {
+    if (!detail::is_token(method))
+      throw std::invalid_argument("invalid request method");
+
+    method_ = std::move(method);
+  }
 
   /// The request target as sent on the request line (path?query)
   const std::string& target() const { return target_; }
-  void target(std::string target) { target_ = std::move(target); }
+  void target(std::string target)
+  {
+    if (!detail::is_target(target))
+      throw std::invalid_argument("invalid request target");
+
+    target_ = std::move(target);
+  }
 
   /// The path part of the target, without query
   std::string_view path() const

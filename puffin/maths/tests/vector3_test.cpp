@@ -37,25 +37,25 @@
 #include <catch2/catch_test_macros.hpp>
 #include <puffin/maths/vector3.hpp>
 
-pfn::vector3f v1(1.0, 2, 3.0f);
-pfn::vector3f v2(4.1f, 5.2f, 6.3f);
+puffin::maths::vector3f v1(1.0, 2, 3.0f);
+puffin::maths::vector3f v2(4.1f, 5.2f, 6.3f);
 
 TEST_CASE("Vector3 operations", "[maths][vector3]") {
   SECTION("equals") {
-    REQUIRE(v1 == pfn::vector3f(1, 2, 3));
+    REQUIRE(v1 == puffin::maths::vector3f(1, 2, 3));
   }
 
   SECTION("addition") {
-    pfn::vector3f v3 = v1 + v2;
+    puffin::maths::vector3f v3 = v1 + v2;
 
-    REQUIRE(v1 + v2 == pfn::vector3f(5.1, 7.2, 9.3));
-    REQUIRE(v3 == pfn::vector3f(5.1, 7.2, 9.3));
+    REQUIRE(v1 + v2 == puffin::maths::vector3f(5.1, 7.2, 9.3));
+    REQUIRE(v3 == puffin::maths::vector3f(5.1, 7.2, 9.3));
   }
 
   SECTION("multiplication") {
-    pfn::vector3f v3 = v1 * v2;   
+    puffin::maths::vector3f v3 = v1 * v2;   
     
-    REQUIRE(v1 * v2 == pfn::vector3f(4.1, 10.4, 18.9));
-    REQUIRE(v3 == pfn::vector3f(4.1, 10.4, 18.9));
+    REQUIRE(v1 * v2 == puffin::maths::vector3f(4.1, 10.4, 18.9));
+    REQUIRE(v3 == puffin::maths::vector3f(4.1, 10.4, 18.9));
   }
 }
