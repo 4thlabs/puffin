@@ -43,7 +43,6 @@
 #include <puffin/rest/dsl.hpp>
 #include <puffin/rest/errors.hpp>
 #include <puffin/rest/params.hpp>
-#include <puffin/webkit/client/client.hpp>
 
 #include <map>
 #include <string>
@@ -53,16 +52,6 @@
 namespace puffin {
 namespace rest {
 namespace detail {
-
-template<typename T>
-struct transport_for {
-  using type = T;
-};
-
-template<webkit::Connector C>
-struct transport_for<C> {
-  using type = webkit::basic_client<C>;
-};
 
 /// The result of a call from its outcome: http_error becomes an error value, other exceptions are rethrown
 template<typename T, typename V>

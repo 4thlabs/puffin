@@ -95,7 +95,7 @@ middlewares of the server, then the security validators, argument decoding, the 
 // wk::any_connector: any webkit Connector, the runtime (asio, Qt...) is chosen by the caller
 pa::async<void> run(wk::any_connector connector)
 {
-  rest::client<v1, wk::any_connector, wk::interceptors::retry> api(std::move(connector), "host", 80);
+  rest::client<v1, wk::interceptors::retry> api(std::move(connector), "host", 80);
   api.credentials<rest::api_key<"X-Api-Key">>("...");
 
   user u = co_await api.call<users::get>(42);
@@ -110,10 +110,11 @@ pa::async<void> run(wk::any_connector connector)
 co_await run(wk::asio::tcp_connector {io});
 ```
 
-- The client runs over a webkit `Connector` (wrapped in a `webkit::basic_client`) or any `Transport`.
-  `wk::any_connector` keeps application code independent of the runtime without making it a template (a client
-  templated on its connector needs `api.template call<E>()`);
-  `local_transport` calls a server in process, for tests.
+- `rest::client<Api, Interceptors...>` does not depend on its transport (`rest::any_transport`, one virtual call
+  per request): it is built from a webkit `Connector` with host and port (wrapped in a
+  `webkit::basic_client<wk::any_connector>`), or from any `Transport`, such as `rest::local_transport(server)` which
+  calls a server in process, for tests: `rest::client<v1> api {rest::local_transport(server)};` (with parentheses
+  this line would declare a function).
 - `credentials<Scheme>(value)` gives the value sent for a security scheme (`api_key<>`, `api_key_query<>`,
   `bearer_auth`), only to the endpoints declaring it.
 - Interceptors are webkit ones (`async<response> operator()(request&, next_request)`, see the

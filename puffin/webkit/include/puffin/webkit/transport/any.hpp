@@ -38,6 +38,7 @@
 #define PUFFIN_WEBKIT_TRANSPORT_ANY_HPP
 
 #include <puffin/async/async.hpp>
+#include <puffin/webkit/detail/pointer.hpp>
 #include <puffin/webkit/transport/concepts.hpp>
 
 #include <concepts>
@@ -45,7 +46,6 @@
 #include <cstdint>
 #include <memory>
 #include <span>
-#include <stdexcept>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -95,13 +95,7 @@ private:
     S stream;
   };
 
-  concept_t& stream() const
-  {
-    if (!impl_)
-      throw std::logic_error("any_stream: moved from");
-
-    return *impl_;
-  }
+  concept_t& stream() const { return detail::checked(impl_, "any_stream: moved from"); }
 
   std::unique_ptr<concept_t> impl_;
 };
