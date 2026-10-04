@@ -57,9 +57,11 @@ namespace webkit {
  */
 class any_stream {
 public:
-  template <Stream S>
+  template<Stream S>
     requires(!std::same_as<std::decay_t<S>, any_stream>)
-  any_stream(S stream) : impl_(std::make_unique<model<S>>(std::move(stream))) {}
+  any_stream(S stream)
+      : impl_(std::make_unique<model<S>>(std::move(stream)))
+  {}
 
   async::async<std::size_t> read_some(std::span<char> buffer) { return impl_->read_some(buffer); }
   async::async<std::size_t> write(std::span<const char> data) { return impl_->write(data); }
@@ -73,13 +75,17 @@ private:
     virtual void close() = 0;
   };
 
-  template <typename S>
+  template<typename S>
   struct model final : concept_t {
-    explicit model(S s) : stream(std::move(s)) {}
+    explicit model(S s)
+        : stream(std::move(s))
+    {}
 
-    async::async<std::size_t> read_some(std::span<char> buffer) override {
+    async::async<std::size_t> read_some(std::span<char> buffer) override
+    {
       co_return co_await stream.read_some(buffer);
     }
+
     async::async<std::size_t> write(std::span<const char> data) override { co_return co_await stream.write(data); }
     void close() override { stream.close(); }
 
@@ -99,9 +105,11 @@ private:
  */
 class any_connector {
 public:
-  template <Connector C>
+  template<Connector C>
     requires(!std::same_as<std::decay_t<C>, any_connector>)
-  any_connector(C connector) : impl_(std::make_unique<model<C>>(std::move(connector))) {}
+  any_connector(C connector)
+      : impl_(std::make_unique<model<C>>(std::move(connector)))
+  {}
 
   async::async<any_stream> connect(std::string_view host, std::uint16_t port) { return impl_->connect(host, port); }
 
@@ -111,11 +119,14 @@ private:
     virtual async::async<any_stream> connect(std::string_view host, std::uint16_t port) = 0;
   };
 
-  template <typename C>
+  template<typename C>
   struct model final : concept_t {
-    explicit model(C c) : connector(std::move(c)) {}
+    explicit model(C c)
+        : connector(std::move(c))
+    {}
 
-    async::async<any_stream> connect(std::string_view host, std::uint16_t port) override {
+    async::async<any_stream> connect(std::string_view host, std::uint16_t port) override
+    {
       co_return any_stream(co_await connector.connect(host, port));
     }
 
