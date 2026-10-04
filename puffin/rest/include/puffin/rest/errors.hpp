@@ -43,6 +43,7 @@
 #include <puffin/webkit/http/status.hpp>
 
 #include <concepts>
+#include <cstddef>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -158,13 +159,59 @@ private:
 
 namespace detail {
 
-/// A string as the inside of a JSON string literal
+/// Length of a UTF-8 sequence from its first byte, 0 for a byte that cannot start one
+constexpr std::size_t utf8_length(unsigned char lead) noexcept
+{
+  if (lead < 0x80)
+    return 1;
+
+  if (lead >= 0xC2 && lead < 0xE0)
+    return 2;
+
+  if (lead >= 0xE0 && lead < 0xF0)
+    return 3;
+
+  return lead >= 0xF0 && lead < 0xF5 ? 4 : 0;
+}
+
+/// Length of the valid UTF-8 sequence starting at s[i], 0 if the bytes there are not valid UTF-8
+inline std::size_t utf8_sequence_length(std::string_view s, std::size_t i)
+{
+  auto byte = [&](std::size_t k) { return static_cast<unsigned char>(s[k]); };
+  const unsigned char lead = byte(i);
+  const std::size_t length = utf8_length(lead);
+
+  if (length == 0 || i + length > s.size())
+    return 0;
+
+  for (std::size_t k = 1; k < length; ++k) {
+    if ((byte(i + k) & 0xC0) != 0x80)
+      return 0;
+  }
+
+  // Overlong 3 and 4 byte forms, UTF-16 surrogates, code points past U+10FFFF
+  const unsigned char second = length > 1 ? byte(i + 1) : 0;
+  const bool invalid = (lead == 0xE0 && second < 0xA0) || (lead == 0xED && second >= 0xA0) ||
+                       (lead == 0xF0 && second < 0x90) || (lead == 0xF4 && second >= 0x90);
+  return invalid ? 0 : length;
+}
+
+/// A string as the inside of a JSON string literal; bytes that are not valid UTF-8 become U+FFFD
 inline std::string json_escape(std::string_view s)
 {
   static constexpr char digits[] = "0123456789abcdef";
   std::string out;
 
-  for (unsigned char c : s) {
+  for (std::size_t i = 0; i < s.size();) {
+    const auto c = static_cast<unsigned char>(s[i]);
+    const std::size_t length = utf8_sequence_length(s, i);
+
+    if (length == 0) {
+      out += "\\ufffd";
+      ++i;
+      continue;
+    }
+
     if (c == '"' || c == '\\') {
       out += '\\';
       out += static_cast<char>(c);
@@ -173,8 +220,10 @@ inline std::string json_escape(std::string_view s)
       out += digits[c >> 4];
       out += digits[c & 0x0F];
     } else {
-      out += static_cast<char>(c);
+      out.append(s.substr(i, length));
     }
+
+    i += length;
   }
 
   return out;
@@ -192,6 +241,8 @@ http_error http_error_of(const async::outcome<V>& outcome)
   } catch (const http_error& e) {
     return e;
   }
+
+  throw std::logic_error("http_error_of: rethrow returned"); // Unreachable, rethrow always throws
 }
 
 } // namespace detail

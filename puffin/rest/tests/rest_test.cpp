@@ -147,6 +147,18 @@ using local_client = rest::client<bank::v1, rest::local_transport<server_type>>;
 
 } // namespace
 
+TEST_CASE("JSON error messages", "[rest]")
+{
+  using rest::detail::json_escape;
+
+  REQUIRE(json_escape(R"(say "hi" \ bye)") == R"(say \"hi\" \\ bye)");
+  REQUIRE(json_escape("a\nb\x01") == R"(a\u000ab\u0001)");
+  REQUIRE(json_escape("caf\xC3\xA9 \xE2\x82\xAC \xF0\x9F\x90\xA7") == "caf\xC3\xA9 \xE2\x82\xAC \xF0\x9F\x90\xA7");
+  REQUIRE(json_escape("bad \xFF\xC3") == R"(bad \ufffd\ufffd)");
+  REQUIRE(json_escape("\xC0\xAF \xED\xA0\x80") == R"(\ufffd\ufffd \ufffd\ufffd\ufffd)");
+  REQUIRE(rest::json_error_codec {}.encode(rest::http_error(404, "no \"x\"")) == R"({"error":"no \"x\""})");
+}
+
 TEST_CASE("Server: requests, statuses and errors", "[rest]")
 {
   bank_fixture f;
