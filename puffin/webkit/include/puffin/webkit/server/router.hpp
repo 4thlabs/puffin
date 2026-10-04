@@ -37,6 +37,8 @@
 #ifndef PUFFIN_WEBKIT_SERVER_ROUTER_HPP
 #define PUFFIN_WEBKIT_SERVER_ROUTER_HPP
 
+#include <puffin/webkit/server/route_info.hpp>
+
 #include <algorithm>
 #include <regex>
 #include <string>
@@ -62,6 +64,9 @@ public:
     /// The matched handler, nullptr if no route matched
     const handler_type* handler = nullptr;
 
+    /// The matched route, nullptr if no route matched
+    const route_info* route = nullptr;
+
     /// Route parameters (capture groups)
     std::vector<std::string> params;
 
@@ -71,9 +76,10 @@ public:
     explicit operator bool() const { return handler != nullptr; }
   };
 
-  void add(std::string method, const std::string& pattern, handler_type handler)
+  void add(std::string method, const std::string& pattern, handler_type handler, std::string name = {})
   {
-    routes_.push_back({std::move(method), pattern, std::regex(pattern), std::move(handler)});
+    std::regex regex(pattern);
+    routes_.push_back({{std::move(method), pattern, std::move(name)}, std::move(regex), std::move(handler)});
   }
 
   /// Finds the handler for a request. HEAD falls back to GET when no HEAD route matches.
@@ -95,8 +101,7 @@ public:
 
 private:
   struct route {
-    std::string method;
-    std::string pattern;
+    route_info info;
     std::regex regex;
     handler_type handler;
   };
@@ -110,12 +115,13 @@ private:
       if (!std::regex_match(path.begin(), path.end(), groups, r.regex))
         continue;
 
-      if (r.method != method) {
-        add_unique(m.allowed_methods, r.method);
+      if (r.info.method != method) {
+        add_unique(m.allowed_methods, r.info.method);
         continue;
       }
 
       m.handler = &r.handler;
+      m.route = &r.info;
       m.allowed_methods.clear();
 
       for (std::size_t i = 1; i < groups.size(); ++i)

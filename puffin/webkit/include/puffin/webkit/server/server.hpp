@@ -81,12 +81,15 @@ public:
       : options_(std::move(options)), chain_(std::move(middlewares)...)
   {}
 
-  /// Adds a route, pattern being a regular expression matched against the whole path
+  /**
+   * @brief Adds a route, pattern being a regular expression matched against the whole path.
+   *        The optional name is reachable by middlewares with ctx.route()->name.
+   */
   template<typename F>
     requires std::invocable<F&, context_type&>
-  void route(std::string method, const std::string& pattern, F handler)
+  void route(std::string method, const std::string& pattern, F handler, std::string name = {})
   {
-    router_.add(std::move(method), pattern, make_handler(std::move(handler)));
+    router_.add(std::move(method), pattern, make_handler(std::move(handler)), std::move(name));
   }
 
   template<typename F>
@@ -157,11 +160,16 @@ public:
   async::async<void> handle(request& req, response& res)
   {
     context_type ctx(req, res);
+    auto match = router_.find(req.method(), req.path());
+    ctx.route(match.route);
+    ctx.params(std::move(match.params));
+
     std::size_t entered = 0;
+    auto dispatch_match = [this, &ctx, &match]() { return dispatch(ctx, match); };
 
     try {
       if (chain_.before(ctx, entered))
-        co_await dispatch(ctx);
+        co_await chain_.around(ctx, dispatch_match);
     } catch (...) {
       fail(res);
     }
@@ -189,12 +197,9 @@ private:
   }
 
   /// Calls the route matching the request, or answers 404 / 405
-  async::async<void> dispatch(context_type& ctx)
+  async::async<void> dispatch(context_type& ctx, const typename basic_router<handler_type>::match& match)
   {
-    auto match = router_.find(ctx.request().method(), ctx.request().path());
-
     if (match) {
-      ctx.params(std::move(match.params));
       co_await (*match.handler)(ctx);
     } else if (!match.allowed_methods.empty()) {
       ctx.response().status(status::method_not_allowed);

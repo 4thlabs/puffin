@@ -34,35 +34,35 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PUFFIN_WEBKIT_HPP
-#define PUFFIN_WEBKIT_HPP
+#ifndef PUFFIN_WEBKIT_DETAIL_CONTINUATION_HPP
+#define PUFFIN_WEBKIT_DETAIL_CONTINUATION_HPP
 
-#include <puffin/webkit/uri/uri.hpp>
+#include <functional>
+#include <utility>
 
-#include <puffin/webkit/http/cookie.hpp>
-#include <puffin/webkit/http/errors.hpp>
-#include <puffin/webkit/http/headers.hpp>
-#include <puffin/webkit/http/method.hpp>
-#include <puffin/webkit/http/parser.hpp>
-#include <puffin/webkit/http/request.hpp>
-#include <puffin/webkit/http/response.hpp>
-#include <puffin/webkit/http/serializer.hpp>
-#include <puffin/webkit/http/status.hpp>
-#include <puffin/webkit/http/version.hpp>
+namespace puffin {
+namespace webkit {
+namespace detail {
 
-#include <puffin/webkit/server/context.hpp>
-#include <puffin/webkit/server/middleware.hpp>
-#include <puffin/webkit/server/router.hpp>
-#include <puffin/webkit/server/server.hpp>
+/// What a middleware or an interceptor calls to continue: the next one in the chain, or the last step
+template<typename Signature>
+class continuation;
 
-#include <puffin/webkit/client/client.hpp>
-#include <puffin/webkit/client/interceptor.hpp>
-#include <puffin/webkit/interceptors/bearer.hpp>
-#include <puffin/webkit/interceptors/retry.hpp>
+template<typename R, typename... Args>
+class continuation<R(Args...)> {
+public:
+  explicit continuation(std::function<R(Args...)> next)
+      : next_(std::move(next))
+  {}
 
-#include <puffin/webkit/middlewares/cookies.hpp>
-#include <puffin/webkit/middlewares/session.hpp>
+  R operator()(Args... args) const { return next_(std::forward<Args>(args)...); }
 
-#include <puffin/webkit/transport/concepts.hpp>
+private:
+  std::function<R(Args...)> next_;
+};
 
-#endif // PUFFIN_WEBKIT_HPP
+} // namespace detail
+} // namespace webkit
+} // namespace puffin
+
+#endif // PUFFIN_WEBKIT_DETAIL_CONTINUATION_HPP

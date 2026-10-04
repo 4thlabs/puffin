@@ -34,35 +34,54 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PUFFIN_WEBKIT_HPP
-#define PUFFIN_WEBKIT_HPP
+#ifndef PUFFIN_WEBKIT_INTERCEPTORS_BEARER_HPP
+#define PUFFIN_WEBKIT_INTERCEPTORS_BEARER_HPP
 
-#include <puffin/webkit/uri/uri.hpp>
-
-#include <puffin/webkit/http/cookie.hpp>
-#include <puffin/webkit/http/errors.hpp>
-#include <puffin/webkit/http/headers.hpp>
-#include <puffin/webkit/http/method.hpp>
-#include <puffin/webkit/http/parser.hpp>
-#include <puffin/webkit/http/request.hpp>
-#include <puffin/webkit/http/response.hpp>
-#include <puffin/webkit/http/serializer.hpp>
-#include <puffin/webkit/http/status.hpp>
-#include <puffin/webkit/http/version.hpp>
-
-#include <puffin/webkit/server/context.hpp>
-#include <puffin/webkit/server/middleware.hpp>
-#include <puffin/webkit/server/router.hpp>
-#include <puffin/webkit/server/server.hpp>
-
-#include <puffin/webkit/client/client.hpp>
+#include <puffin/async/async.hpp>
 #include <puffin/webkit/client/interceptor.hpp>
-#include <puffin/webkit/interceptors/bearer.hpp>
-#include <puffin/webkit/interceptors/retry.hpp>
+#include <puffin/webkit/http/status.hpp>
 
-#include <puffin/webkit/middlewares/cookies.hpp>
-#include <puffin/webkit/middlewares/session.hpp>
+#include <functional>
+#include <string>
+#include <utility>
 
-#include <puffin/webkit/transport/concepts.hpp>
+namespace puffin {
+namespace webkit {
+namespace interceptors {
 
-#endif // PUFFIN_WEBKIT_HPP
+/**
+ * @brief Sends "Authorization: Bearer <token>" with every request. With a refresh function, a 401 refreshes the
+ *        token and sends the request again, once. Not synchronized: like its client, one request at a time.
+ */
+class bearer {
+public:
+  void token(std::string token) { token_ = std::move(token); }
+  const std::string& token() const noexcept { return token_; }
+
+  void on_refresh(std::function<async::async<std::string>()> refresh) { refresh_ = std::move(refresh); }
+
+  async::async<response> operator()(request& req, next_request next)
+  {
+    authorize(req);
+    response res = co_await next(req);
+
+    if (res.status_code() != static_cast<int>(status::unauthorized) || !refresh_)
+      co_return res;
+
+    token_ = co_await refresh_();
+    authorize(req);
+    co_return co_await next(req);
+  }
+
+private:
+  void authorize(request& req) const { req.headers().set("Authorization", "Bearer " + token_); }
+
+  std::string token_;
+  std::function<async::async<std::string>()> refresh_;
+};
+
+} // namespace interceptors
+} // namespace webkit
+} // namespace puffin
+
+#endif // PUFFIN_WEBKIT_INTERCEPTORS_BEARER_HPP

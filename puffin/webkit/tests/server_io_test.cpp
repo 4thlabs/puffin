@@ -38,13 +38,17 @@
 
 #include <puffin/async.hpp>
 #include <puffin/webkit/client/client.hpp>
+#include <puffin/webkit/interceptors/bearer.hpp>
+#include <puffin/webkit/interceptors/retry.hpp>
 #include <puffin/webkit/middlewares/cookies.hpp>
 #include <puffin/webkit/middlewares/session.hpp>
 #include <puffin/webkit/server/server.hpp>
 #include <puffin/webkit/transport/reader.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <chrono>
 #include <stdexcept>
+#include <vector>
 #include <string>
 
 using namespace puffin::webkit;
@@ -379,5 +383,163 @@ TEST_CASE("Client over a stream", "[webkit][client]")
     connector.add(serve(server, request_bytes));
     basic_client client(connector, "example.com", 80);
     REQUIRE(sync_wait(client.get("/users/7")).body() == "user 7");
+  }
+}
+
+namespace {
+
+/// Tells the matched route and the status the handler answered, in response headers
+struct route_echo {
+  template<typename Context>
+  async<void> around(Context& ctx, next_handler next)
+  {
+    co_await next();
+    ctx.response().headers().set("X-Route", ctx.route() ? ctx.route()->name : "-");
+    ctx.response().headers().set("X-Status", std::to_string(ctx.response().status_code()));
+  }
+};
+
+/// Answers 401 itself without an X-Key header
+struct key_check {
+  template<typename Context>
+  async<void> around(Context& ctx, next_handler next)
+  {
+    if (!ctx.request().headers().contains("X-Key")) {
+      ctx.response().status(status::unauthorized);
+      co_return;
+    }
+
+    co_await next();
+  }
+};
+
+} // namespace
+
+TEST_CASE("Around middlewares", "[webkit][middleware]")
+{
+  basic_server<route_echo, key_check> server;
+  server.route("GET", "/users/([0-9]+)", [](auto& ctx) { ctx.response().body("user"); }, "users.get");
+
+  auto run = [&](std::string target, bool key) {
+    request req("GET", std::move(target));
+    response res;
+
+    if (key)
+      req.headers().set("X-Key", "k");
+
+    sync_wait(server.handle(req, res));
+    return res;
+  };
+
+  SECTION("They wrap the handler in order and know the route")
+  {
+    response res = run("/users/1", true);
+    REQUIRE(res.body() == "user");
+    REQUIRE(res.headers().get("X-Route") == "users.get");
+    REQUIRE(res.headers().get("X-Status") == "200");
+  }
+
+  SECTION("The next ones and the handler are skipped when one answers")
+  {
+    response res = run("/users/1", false);
+    REQUIRE(res.status_code() == 401);
+    REQUIRE(res.body().empty());
+    REQUIRE(res.headers().get("X-Status") == "401");
+  }
+
+  SECTION("No route")
+  {
+    response res = run("/nope", true);
+    REQUIRE(res.status_code() == 404);
+    REQUIRE(res.headers().get("X-Route") == "-");
+  }
+}
+
+namespace {
+
+/// Adds a header to every request
+struct tag_request {
+  async<response> operator()(request& req, next_request next) const
+  {
+    req.headers().set("X-Tag", "t");
+    co_return co_await next(req);
+  }
+};
+
+} // namespace
+
+TEST_CASE("Client interceptors", "[webkit][client]")
+{
+  test::memory_connector connector;
+
+  SECTION("They change the request")
+  {
+    auto p = connector.add("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+    basic_client<test::memory_connector, tag_request> client(connector, "example.com", 80);
+
+    REQUIRE(sync_wait(client.get("/")).status_code() == 200);
+    REQUIRE(p->output == "GET / HTTP/1.1\r\nX-Tag: t\r\nHost: example.com\r\n\r\n");
+  }
+
+  SECTION("retry sends idempotent requests again on 503")
+  {
+    connector.add("HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n"
+                  "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok");
+    basic_client<test::memory_connector, interceptors::retry> client(connector, "example.com", 80);
+
+    REQUIRE(sync_wait(client.get("/")).body() == "ok");
+  }
+
+  SECTION("retry waits with a backoff, or what Retry-After asks")
+  {
+    connector.add("HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n"
+                  "HTTP/1.1 503 Service Unavailable\r\nRetry-After: 2\r\nContent-Length: 0\r\n\r\n"
+                  "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n"
+                  "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+    basic_client<test::memory_connector, interceptors::retry> client(connector, "example.com", 80);
+
+    std::vector<std::chrono::milliseconds> waits;
+    auto& retry = client.interceptor<interceptors::retry>();
+    retry.attempts(4);
+    retry.backoff(std::chrono::milliseconds(100), std::chrono::milliseconds(1500));
+    retry.sleep([&](std::chrono::milliseconds delay) -> async<void> {
+      waits.push_back(delay);
+      co_return;
+    });
+
+    REQUIRE(sync_wait(client.get("/")).status_code() == 200);
+    REQUIRE(waits == std::vector<std::chrono::milliseconds> {std::chrono::milliseconds(100),
+                                                             std::chrono::milliseconds(1500),
+                                                             std::chrono::milliseconds(400)});
+  }
+
+  SECTION("retry does not send again after a malformed response")
+  {
+    connector.add("HTTP/1.1 nope\r\n\r\n");
+    connector.add("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+    basic_client<test::memory_connector, interceptors::retry> client(connector, "example.com", 80);
+
+    REQUIRE_THROWS_AS(sync_wait(client.get("/")), protocol_error);
+  }
+
+  SECTION("retry leaves other requests alone")
+  {
+    connector.add("HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n");
+    basic_client<test::memory_connector, interceptors::retry> client(connector, "example.com", 80);
+
+    REQUIRE(sync_wait(client.post("/", "x")).status_code() == 503);
+  }
+
+  SECTION("bearer refreshes its token once on 401")
+  {
+    auto p = connector.add("HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n"
+                           "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+    basic_client<test::memory_connector, interceptors::bearer> client(connector, "example.com", 80);
+    client.interceptor<interceptors::bearer>().token("old");
+    client.interceptor<interceptors::bearer>().on_refresh([]() -> async<std::string> { co_return "new"; });
+
+    REQUIRE(sync_wait(client.get("/")).status_code() == 200);
+    REQUIRE(client.interceptor<interceptors::bearer>().token() == "new");
+    REQUIRE(p->output.find("Authorization: Bearer new") != std::string::npos);
   }
 }

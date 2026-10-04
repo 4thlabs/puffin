@@ -62,6 +62,7 @@
 #include <chrono>
 #include <coroutine>
 #include <exception>
+#include <memory>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -104,6 +105,13 @@ public:
   void post(std::coroutine_handle<> h) const
   {
     ::puffin::async::detail::net::post(inner_, [h] { h.resume(); });
+  }
+
+  /// Resumes h once delay elapsed, with a steady_timer
+  void post_after(std::coroutine_handle<> h, std::chrono::nanoseconds delay) const
+  {
+    auto timer = std::make_shared<::puffin::async::detail::net::steady_timer>(inner_, delay);
+    timer->async_wait([timer, h](const auto&) { h.resume(); });
   }
 
   const inner_executor_type& get_inner_executor() const noexcept { return inner_; }
@@ -220,23 +228,5 @@ public:
 #if defined(PUFFIN_ASYNC_USE_BOOST_ASIO)
 }
 #endif
-
-namespace puffin {
-namespace async {
-namespace asio {
-
-/**
- * @brief Suspends the coroutine for the given duration, using a timer on the given executor
- */
-template<typename Rep, typename Period>
-async<void> sleep_for(executor ex, std::chrono::duration<Rep, Period> duration)
-{
-  ::puffin::async::detail::net::steady_timer timer(ex.get_inner_executor(), duration);
-  co_await timer.async_wait(use_async);
-}
-
-}
-}
-}
 
 #endif // PUFFIN_ASYNC_ADAPTER_ASIO_HPP

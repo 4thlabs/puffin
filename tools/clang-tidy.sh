@@ -14,7 +14,7 @@ CLANG_TIDY=${CLANG_TIDY:-clang-tidy-18}
 modules=("$@")
 
 if [ ${#modules[@]} -eq 0 ]; then
-  modules=(async webkit)
+  modules=(async webkit rest)
 fi
 
 flags=(-x c++ -std=c++20 -fPIC -DASIO_STANDALONE)

@@ -34,35 +34,46 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PUFFIN_WEBKIT_HPP
-#define PUFFIN_WEBKIT_HPP
+#ifndef PUFFIN_REST_JSON_HPP
+#define PUFFIN_REST_JSON_HPP
 
-#include <puffin/webkit/uri/uri.hpp>
+#include <puffin/rest/codec.hpp>
 
-#include <puffin/webkit/http/cookie.hpp>
-#include <puffin/webkit/http/errors.hpp>
-#include <puffin/webkit/http/headers.hpp>
-#include <puffin/webkit/http/method.hpp>
-#include <puffin/webkit/http/parser.hpp>
-#include <puffin/webkit/http/request.hpp>
-#include <puffin/webkit/http/response.hpp>
-#include <puffin/webkit/http/serializer.hpp>
-#include <puffin/webkit/http/status.hpp>
-#include <puffin/webkit/http/version.hpp>
+#include <nlohmann/json.hpp>
 
-#include <puffin/webkit/server/context.hpp>
-#include <puffin/webkit/server/middleware.hpp>
-#include <puffin/webkit/server/router.hpp>
-#include <puffin/webkit/server/server.hpp>
+#include <string>
+#include <string_view>
 
-#include <puffin/webkit/client/client.hpp>
-#include <puffin/webkit/client/interceptor.hpp>
-#include <puffin/webkit/interceptors/bearer.hpp>
-#include <puffin/webkit/interceptors/retry.hpp>
+namespace puffin {
+namespace rest {
 
-#include <puffin/webkit/middlewares/cookies.hpp>
-#include <puffin/webkit/middlewares/session.hpp>
+/**
+ * @brief JSON bodies with nlohmann::json: types need to_json / from_json, usually through
+ *        NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(type, fields...)
+ */
+struct json_codec {
+  static constexpr std::string_view content_type = "application/json";
 
-#include <puffin/webkit/transport/concepts.hpp>
+  template<typename T>
+  static std::string encode(const T& value)
+  {
+    return nlohmann::json(value).dump();
+  }
 
-#endif // PUFFIN_WEBKIT_HPP
+  template<typename T>
+  static T decode(std::string_view text)
+  {
+    return nlohmann::json::parse(text.begin(), text.end()).template get<T>();
+  }
+};
+
+/// JSON is the default codec of structured bodies once this header is included
+template<>
+struct default_structured_codec<void> {
+  using type = json_codec;
+};
+
+} // namespace rest
+} // namespace puffin
+
+#endif // PUFFIN_REST_JSON_HPP

@@ -34,35 +34,22 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PUFFIN_WEBKIT_HPP
-#define PUFFIN_WEBKIT_HPP
+#ifndef PUFFIN_WEBKIT_SERVER_ROUTE_INFO_HPP
+#define PUFFIN_WEBKIT_SERVER_ROUTE_INFO_HPP
 
-#include <puffin/webkit/uri/uri.hpp>
+#include <string>
 
-#include <puffin/webkit/http/cookie.hpp>
-#include <puffin/webkit/http/errors.hpp>
-#include <puffin/webkit/http/headers.hpp>
-#include <puffin/webkit/http/method.hpp>
-#include <puffin/webkit/http/parser.hpp>
-#include <puffin/webkit/http/request.hpp>
-#include <puffin/webkit/http/response.hpp>
-#include <puffin/webkit/http/serializer.hpp>
-#include <puffin/webkit/http/status.hpp>
-#include <puffin/webkit/http/version.hpp>
+namespace puffin {
+namespace webkit {
 
-#include <puffin/webkit/server/context.hpp>
-#include <puffin/webkit/server/middleware.hpp>
-#include <puffin/webkit/server/router.hpp>
-#include <puffin/webkit/server/server.hpp>
+/// What the server knows about the route a request matched, reachable from the context
+struct route_info {
+  std::string method;
+  std::string pattern;
+  std::string name; ///< Given when the route was added, empty by default
+};
 
-#include <puffin/webkit/client/client.hpp>
-#include <puffin/webkit/client/interceptor.hpp>
-#include <puffin/webkit/interceptors/bearer.hpp>
-#include <puffin/webkit/interceptors/retry.hpp>
+} // namespace webkit
+} // namespace puffin
 
-#include <puffin/webkit/middlewares/cookies.hpp>
-#include <puffin/webkit/middlewares/session.hpp>
-
-#include <puffin/webkit/transport/concepts.hpp>
-
-#endif // PUFFIN_WEBKIT_HPP
+#endif // PUFFIN_WEBKIT_SERVER_ROUTE_INFO_HPP

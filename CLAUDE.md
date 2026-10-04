@@ -35,7 +35,7 @@ Passing tests is not enough. Before committing, check the diff against these rul
 - Repeated workarounds (`optional` + `exception_ptr` + flag to escape a `catch` in a coroutine) get a named
   helper, written once.
 - Keep classes as thin facades over smaller, testable pieces; pure logic (no I/O) gets its own unit tests.
-- `.clang-tidy` (function size and complexity) is enforced in CI on async and webkit: run `tools/clang-tidy.sh`
+- `.clang-tidy` (function size and complexity) is enforced in CI on async, webkit and rest: run `tools/clang-tidy.sh`
   before pushing. A `NOLINT` needs a comment saying why, and a roadmap entry if it is debt.
 
 Before every push, run `/simplify` on the diff and apply what it finds. Bugs are covered by the Claude reviewer

@@ -37,8 +37,8 @@ int main()
     ctx.response().body("Visits: " + visits + "\n", "text/plain");
   });
 
-  server.get("/wait/([0-9]+)", [executor](auto& ctx) -> pa::async<void> {
-    co_await pa::asio::sleep_for(executor, std::chrono::milliseconds(std::stoi(std::string(ctx.param(0)))));
+  server.get("/wait/([0-9]+)", [](auto& ctx) -> pa::async<void> {
+    co_await pa::sleep_for(std::chrono::milliseconds(std::stoi(std::string(ctx.param(0)))));
     ctx.response().body("Waited\n", "text/plain");
   });
 
@@ -79,7 +79,8 @@ server.get("/users/([0-9]+)", show_user);         // ctx.param(0) is the id
 server.route("OPTIONS", "/users", options);       // any method
 ```
 
-- `get`, `post`, `put`, `patch`, `del` and `route(method, pattern, handler)`.
+- `get`, `post`, `put`, `patch`, `del` and `route(method, pattern, handler, name)`. The optional name is
+  reachable by middlewares with `ctx.route()->name`.
 - Patterns are `std::regex` matched against the **whole** path (query excluded). Capture groups become the route
   parameters, read with `ctx.param(i)` (empty if missing) or `ctx.params()`.
 - Routes are tried in insertion order, the first match wins.
@@ -115,6 +116,7 @@ with an empty body. A handler that throws produces a `500 Internal Server Error`
 | `request()` | The parsed `request` (method, target, `path()`, `query()`, headers, body). |
 | `response()` | The `response` to send. |
 | `param(i)`, `params()` | Route parameters. |
+| `route()` | The matched route (`method`, `pattern`, `name`), `nullptr` for a 404 or 405. Known before the middlewares run. |
 | `data<M>()` | Data of middleware `M`, when two middlewares expose the same names. |
 
 Each middleware with a nested `data_type` adds it as a base of the context, so its members are reachable directly:
@@ -128,6 +130,8 @@ A middleware is any class with, all optional:
 - a nested `data_type`, added to the context;
 - `before(ctx)`, called in order before the handler. Returning `false` stops the request: the next middlewares and
   the handler are skipped and the response is sent as is;
+- `async<void> around(ctx, wk::next_handler next)`, called in order once every `before` ran, around the handler.
+  It may answer the request itself, or `co_await next()` and then look at the response;
 - `after(ctx)`, called in reverse order after the handler, only for the middlewares whose `before` ran.
 
 ```c++
@@ -148,7 +152,19 @@ wk::basic_server<api_key> server({}, api_key { .key = "secret" });
 server.middleware<api_key>().key = "other";    // instances stay reachable
 ```
 
-Middlewares are synchronous for now.
+An asynchronous middleware uses `around`:
+
+```c++
+struct access_log {
+  template<typename Context>
+  pa::async<void> around(Context& ctx, wk::next_handler next)
+  {
+    auto start = std::chrono::steady_clock::now();
+    co_await next();
+    log(ctx.route() ? ctx.route()->name : "-", ctx.response().status_code(), std::chrono::steady_clock::now() - start);
+  }
+};
+```
 
 ### Cookies
 
@@ -235,6 +251,27 @@ co_await client.post("/users", R"({"name":"puffin"})", "application/json");
   `wk::connection_closed` when the server closes before answering.
 - One request at a time (a second concurrent one throws `std::logic_error`). Use one client per concurrent task.
 - `client_options`: parser limits, read buffer size, `keep_alive`.
+
+### Interceptors
+
+`basic_client<Connector, Interceptors...>` runs interceptors around each request. An interceptor is a class with
+`async<wk::response> operator()(wk::request&, wk::next_request next)`: it may change the request, answer it itself,
+or `co_await next(req)`, several times if needed.
+
+```c++
+wk::basic_client<wk::asio::tcp_connector, wk::interceptors::bearer, wk::interceptors::retry> client(connector, "example.com", 80);
+
+client.interceptor<wk::interceptors::bearer>().token(token);
+client.interceptor<wk::interceptors::bearer>().on_refresh([]() -> pa::async<std::string> { co_return co_await login(); });
+```
+
+- `interceptors::bearer` sends `Authorization: Bearer <token>`. With `on_refresh`, a `401` refreshes the token and
+  sends the request again, once.
+- `interceptors::retry` sends idempotent requests again when the transport fails or the server answers `502`, `503`
+  or `504`, 3 attempts by default (`attempts(n)`). A malformed response is not retried. Attempts are spaced by an
+  exponential backoff (`backoff(first, max)`, 100 ms doubling up to 5 s) or by the `Retry-After` of the response
+  (seconds, capped at the maximum). The wait is `pa::sleep_for`, on the executor of the request; `sleep(f)` replaces it
+  (tests, another timer).
 
 ## HTTP messages
 

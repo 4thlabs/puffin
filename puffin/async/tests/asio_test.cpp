@@ -104,13 +104,13 @@ TEST_CASE("asio adapter", "[async][asio]")
     REQUIRE(result == 4);
   }
 
-  SECTION("sleep_for")
+  SECTION("sleep_for on the asio executor")
   {
     auto start = std::chrono::steady_clock::now();
     bool done = false;
 
     co_spawn(pa::executor { context }, [&]() -> async<void> {
-      co_await pa::sleep_for(context, 20ms);
+      co_await puffin::async::sleep_for(20ms);
       done = true;
     });
 

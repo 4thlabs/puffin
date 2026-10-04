@@ -20,6 +20,7 @@ add_subdirectory(puffin/maths)
 add_subdirectory(puffin/async)
 add_subdirectory(puffin/webkit)
 add_subdirectory(puffin/imdb)
+add_subdirectory(puffin/rest)
 
 if(BUILD_TESTS)
   enable_testing()

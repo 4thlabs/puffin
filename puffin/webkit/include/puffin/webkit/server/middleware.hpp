@@ -37,6 +37,8 @@
 #ifndef PUFFIN_WEBKIT_SERVER_MIDDLEWARE_HPP
 #define PUFFIN_WEBKIT_SERVER_MIDDLEWARE_HPP
 
+#include <puffin/async/async.hpp>
+#include <puffin/webkit/detail/continuation.hpp>
 #include <puffin/webkit/server/context.hpp>
 
 #include <cstddef>
@@ -47,11 +49,16 @@
 namespace puffin {
 namespace webkit {
 
+/// Continues a request from an around() middleware: the next around() middleware, or the route handler
+using next_handler = detail::continuation<async::async<void>()>;
+
 /**
  * @brief A middleware may define:
  *  - a nested data_type, added to the context (see middleware_data),
  *  - before(Context&), called before the route handler. Returning false stops the request: the remaining
  *    middlewares and the handler are skipped, the response is sent as is,
+ *  - async<void> around(Context&, next_handler), called in order once every before() ran, around the route
+ *    handler. It may answer the request itself, or co_await next() and then look at the response,
  *  - after(Context&), called after the route handler, in reverse order.
  * All of them are optional.
  */
@@ -90,7 +97,29 @@ public:
     after_impl(ctx, entered, std::index_sequence_for<Middlewares...>{});
   }
 
+  /// Runs the around() middlewares in order, the last one continuing with handler()
+  template<typename Handler>
+  async::async<void> around(context_type& ctx, Handler& handler)
+  {
+    return around_from<0>(ctx, handler);
+  }
+
 private:
+  template<std::size_t I, typename Handler>
+  async::async<void> around_from(context_type& ctx, Handler& handler)
+  {
+    if constexpr (I == sizeof...(Middlewares)) {
+      return handler();
+    } else {
+      auto& m = std::get<I>(middlewares_);
+
+      if constexpr (requires { m.around(ctx, std::declval<next_handler>()); })
+        return m.around(ctx, next_handler([this, &ctx, &handler]() { return around_from<I + 1>(ctx, handler); }));
+      else
+        return around_from<I + 1>(ctx, handler);
+    }
+  }
+
   template<typename M>
   static bool call_before(M& m, context_type& ctx)
   {

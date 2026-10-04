@@ -78,6 +78,13 @@ public:
       QMetaObject::invokeMethod(context_.data(), [h] { h.resume(); }, Qt::QueuedConnection);
   }
 
+  /// Resumes h once delay elapsed, with a single shot QTimer
+  void post_after(std::coroutine_handle<> h, std::chrono::nanoseconds delay) const
+  {
+    if (context_)
+      QTimer::singleShot(std::chrono::ceil<std::chrono::milliseconds>(delay), context_.data(), [h] { h.resume(); });
+  }
+
   QObject* context() const noexcept { return context_.data(); }
 
   friend bool operator==(const executor& lhs, const executor& rhs) noexcept
@@ -155,18 +162,6 @@ auto signal(Sender* sender, Signal signal)
   static_assert(std::is_base_of_v<typename traits::class_type, Sender>, "the signal must belong to the sender");
 
   return detail::make_signal_awaitable(sender, signal, typename traits::arguments {});
-}
-
-/**
- * @brief Suspends the coroutine for the given duration, using a single shot timer in the thread of
- *        the context object (the application object by default)
- */
-template<typename Rep, typename Period>
-auto sleep_for(std::chrono::duration<Rep, Period> duration, QObject* context = QCoreApplication::instance())
-{
-  auto ms = std::chrono::ceil<std::chrono::milliseconds>(duration);
-
-  return from_callback<>([ms, context](auto callback) { QTimer::singleShot(ms, context, callback); });
 }
 
 }

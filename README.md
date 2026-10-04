@@ -27,6 +27,7 @@ Each module is a separate CMake target, link only what you use.
 | --- | --- | --- | --- |
 | **async** | `puffin::async` | C++20 coroutines independent of any event loop, with asio and Qt adapters. | [README](puffin/async/README.md) |
 | **webkit** | `puffin::webkit` | HTTP/1.1 server and client on `puffin::async`, sans-IO core, asio (TCP, TLS) and Qt transports. | [README](puffin/webkit/README.md) |
+| **rest** | `puffin::rest` | A DSL describing REST apis once, to serve them on webkit and to call them. | [README](puffin/rest/README.md) |
 | **imdb** | `puffin::imdb` | In-memory database with fluent requests, views, indexes and JSON helpers. | [README](puffin/imdb/README.md) |
 | **events** | `puffin::events` | Type-safe event bus. | [Example](#events) |
 | **ioc** | `puffin::ioc` | Dependency injection container with typed bindings. | |
@@ -42,6 +43,7 @@ Adapters are separate targets, built only when their dependency is found:
 | `puffin::webkit_asio` | `puffin::async_asio` |
 | `puffin::webkit_asio_ssl` | `puffin::webkit_asio` and OpenSSL |
 | `puffin::webkit_qt` | `puffin::async_qt` and Qt 6 Network |
+| `puffin::rest_json` | `puffin::rest` and nlohmann::json (JSON bodies) |
 
 ## Getting started
 
@@ -134,6 +136,36 @@ io.run();
 
 More in [puffin/webkit/README.md](puffin/webkit/README.md) and
 [samples/webkit_server_sample.cpp](samples/webkit_server_sample.cpp).
+
+### Rest
+
+```c++
+#include <puffin/rest.hpp>
+#include <puffin/rest/json.hpp>
+
+namespace rest = puffin::rest;
+
+namespace users {
+using namespace puffin::rest;
+
+using get    = endpoint<"users.get",    GET,  "/{id:int}", returns<user>>;
+using create = endpoint<"users.create", POST, "/", body<new_user>, returns<user, status::created>>;
+
+using api = rest::api<"/users", get, create>;
+}
+
+using v1 = rest::api<"/api/v1", rest::with<rest::security<rest::api_key<"X-Api-Key">>, users::api>>;
+
+// Server: one operator()(Endpoint, args...) per endpoint, checked at compile time
+rest::mount<v1>(server, users_service{}, rest::validators(check_api_key));
+
+// Client: the same description
+rest::client<v1, wk::asio::tcp_connector> api(connector, "host", 80);
+api.credentials<rest::api_key<"X-Api-Key">>(key);
+user u = co_await api.call<users::get>(42);
+```
+
+More in [puffin/rest/README.md](puffin/rest/README.md) and [samples/rest_sample.cpp](samples/rest_sample.cpp).
 
 ### Imdb
 

@@ -82,7 +82,7 @@ TEST_CASE("Server and client over Qt", "[webkit][qt]")
   server.get("/hello", [](auto& ctx) { ctx.response().body("hello"); });
 
   server.get("/slow", [](auto& ctx) -> pa::async<void> {
-    co_await pa::qt::sleep_for(10ms);
+    co_await pa::sleep_for(10ms);
     ctx.response().body("slow");
   });
 
@@ -111,7 +111,7 @@ TEST_CASE("Server and client over Qt", "[webkit][qt]")
         acceptor.close();
 
         // Lets the server side connections see the end of stream
-        co_await pa::qt::sleep_for(50ms);
+        co_await pa::sleep_for(50ms);
       },
       [&](std::exception_ptr e) {
         error = e;

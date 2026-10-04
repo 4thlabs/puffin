@@ -39,6 +39,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <atomic>
+#include <chrono>
 #include <future>
 #include <memory>
 #include <stdexcept>
@@ -304,6 +305,47 @@ TEST_CASE("async", "[async]")
     };
 
     REQUIRE(sync_wait(executor, task()));
+  }
+
+  SECTION("sleep_for on a thread executor, shorter delays first")
+  {
+    thread_executor executor;
+    std::vector<int> order;
+    auto start = std::chrono::steady_clock::now();
+
+    auto sleeper = [&](int id, std::chrono::milliseconds delay) -> async<void> {
+      co_await sleep_for(delay);
+      order.push_back(id);
+
+      if (order.size() == 3)
+        executor.stop();
+    };
+
+    co_spawn(executor, sleeper(1, std::chrono::milliseconds(30)));
+    co_spawn(executor, sleeper(2, std::chrono::milliseconds(10)));
+    co_spawn(executor, sleeper(3, std::chrono::milliseconds(20)));
+
+    executor.run();
+    REQUIRE(order == std::vector<int> {2, 3, 1});
+    REQUIRE(std::chrono::steady_clock::now() - start >= std::chrono::milliseconds(30));
+  }
+
+  SECTION("sleep_for without an executor blocks the calling thread")
+  {
+    auto start = std::chrono::steady_clock::now();
+    sync_wait([]() -> async<void> { co_await sleep_for(std::chrono::milliseconds(10)); }());
+    REQUIRE(std::chrono::steady_clock::now() - start >= std::chrono::milliseconds(10));
+  }
+
+  SECTION("sleep_for needs an executor with a timer")
+  {
+    struct no_timer {
+      void post(std::coroutine_handle<> h) { h.resume(); }
+    };
+
+    no_timer executor;
+    REQUIRE_THROWS_AS(sync_wait(executor, []() -> async<void> { co_await sleep_for(std::chrono::milliseconds(1)); }()),
+                      std::logic_error);
   }
 
   SECTION("any_executor")

@@ -43,6 +43,7 @@
 #include <puffin/async/from_callback.hpp>
 #include <puffin/async/impl/thread_executor.hpp>
 #include <puffin/async/schedule.hpp>
+#include <puffin/async/sleep.hpp>
 #include <puffin/async/sync_wait.hpp>
 #include <puffin/async/try_await.hpp>
 #include <puffin/async/when_all.hpp>

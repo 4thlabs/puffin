@@ -92,13 +92,13 @@ TEST_CASE("qt adapter", "[async][qt]")
     REQUIRE(result == 4);
   }
 
-  SECTION("sleep_for")
+  SECTION("sleep_for on the Qt executor")
   {
     auto start = std::chrono::steady_clock::now();
     bool done = false;
 
     co_spawn(qt::executor {}, [&]() -> async<void> {
-      co_await qt::sleep_for(20ms);
+      co_await puffin::async::sleep_for(20ms);
       done = true;
       app.quit();
     });

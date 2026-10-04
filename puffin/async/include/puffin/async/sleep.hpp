@@ -34,35 +34,53 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PUFFIN_WEBKIT_HPP
-#define PUFFIN_WEBKIT_HPP
+#ifndef PUFFIN_ASYNC_SLEEP_HPP
+#define PUFFIN_ASYNC_SLEEP_HPP
 
-#include <puffin/webkit/uri/uri.hpp>
+#include <puffin/async/executor.hpp>
+#include <puffin/async/impl/thread_executor.hpp>
 
-#include <puffin/webkit/http/cookie.hpp>
-#include <puffin/webkit/http/errors.hpp>
-#include <puffin/webkit/http/headers.hpp>
-#include <puffin/webkit/http/method.hpp>
-#include <puffin/webkit/http/parser.hpp>
-#include <puffin/webkit/http/request.hpp>
-#include <puffin/webkit/http/response.hpp>
-#include <puffin/webkit/http/serializer.hpp>
-#include <puffin/webkit/http/status.hpp>
-#include <puffin/webkit/http/version.hpp>
+#include <chrono>
+#include <coroutine>
 
-#include <puffin/webkit/server/context.hpp>
-#include <puffin/webkit/server/middleware.hpp>
-#include <puffin/webkit/server/router.hpp>
-#include <puffin/webkit/server/server.hpp>
+namespace puffin {
+namespace async {
 
-#include <puffin/webkit/client/client.hpp>
-#include <puffin/webkit/client/interceptor.hpp>
-#include <puffin/webkit/interceptors/bearer.hpp>
-#include <puffin/webkit/interceptors/retry.hpp>
+/**
+ * @brief Suspends the awaiting coroutine for a duration, then resumes it on its executor:
+ *
+ *   co_await sleep_for(std::chrono::milliseconds(200));
+ *
+ * The executor needs a timer (TimedExecutor: thread_executor, inline_executor, the asio and Qt executors), or
+ * std::logic_error is thrown. Without any executor (sync_wait with none), it sleeps like inline_executor: blocking.
+ */
+class sleep_for {
+public:
+  template<typename Rep, typename Period>
+  explicit sleep_for(std::chrono::duration<Rep, Period> duration)
+      : delay_(std::chrono::ceil<std::chrono::nanoseconds>(duration))
+  {}
 
-#include <puffin/webkit/middlewares/cookies.hpp>
-#include <puffin/webkit/middlewares/session.hpp>
+  bool await_ready() const noexcept { return delay_.count() <= 0; }
 
-#include <puffin/webkit/transport/concepts.hpp>
+  template<typename P>
+  void await_suspend(std::coroutine_handle<P> h) const
+  {
+    any_executor executor = executor_of(h);
 
-#endif // PUFFIN_WEBKIT_HPP
+    if (executor)
+      executor.post_after(h, delay_);
+    else
+      inline_executor {}.post_after(h, delay_);
+  }
+
+  void await_resume() const noexcept {}
+
+private:
+  std::chrono::nanoseconds delay_;
+};
+
+}
+}
+
+#endif // PUFFIN_ASYNC_SLEEP_HPP

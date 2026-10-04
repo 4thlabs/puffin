@@ -41,9 +41,11 @@
 #include <puffin/async/schedule.hpp>
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <coroutine>
 #include <deque>
+#include <map>
 #include <mutex>
 #include <stdexcept>
 #include <thread>
@@ -52,10 +54,10 @@ namespace puffin {
 namespace async {
 
 /**
- * @brief A basic single thread executor, resuming coroutines in posting order.
+ * @brief A basic single thread executor, resuming coroutines in posting order, with a timer (post_after).
  *
  * run() pumps on the calling thread (or on a thread it owns with run(false)) until stop().
- * Coroutines still queued when it stops are not resumed.
+ * Coroutines still queued or waiting for their delay when it stops are not resumed.
  */
 class thread_executor final {
 public:
@@ -72,6 +74,14 @@ public:
     // is released
     std::lock_guard<std::mutex> lock(mutex_);
     queue_.push_back(h);
+    cv_.notify_one();
+  }
+
+  /// Resumes h on this executor once delay elapsed
+  void post_after(std::coroutine_handle<> h, std::chrono::nanoseconds delay)
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    timers_.emplace(std::chrono::steady_clock::now() + delay, h);
     cv_.notify_one();
   }
 
@@ -136,29 +146,50 @@ private:
   {
     running_thread_ = std::this_thread::get_id();
 
-    while (true) {
-      std::coroutine_handle<> h;
-
-      {
-        std::unique_lock<std::mutex> lock(mutex_);
-        cv_.wait(lock, [&] { return stopped_ || !queue_.empty(); });
-
-        if (stopped_)
-          break;
-
-        h = queue_.front();
-        queue_.pop_front();
-      }
-
+    while (auto h = next())
       h.resume();
-    }
 
     running_thread_ = std::thread::id {};
+  }
+
+  /// The next coroutine to resume, waiting for one to be posted or for a timer to expire; null once stopped
+  std::coroutine_handle<> next()
+  {
+    std::unique_lock<std::mutex> lock(mutex_);
+
+    while (!stopped_) {
+      queue_expired_timers();
+
+      if (!queue_.empty()) {
+        auto h = queue_.front();
+        queue_.pop_front();
+        return h;
+      }
+
+      if (timers_.empty())
+        cv_.wait(lock);
+      else
+        cv_.wait_until(lock, timers_.begin()->first);
+    }
+
+    return nullptr;
+  }
+
+  /// Moves the coroutines whose delay elapsed to the queue, in deadline order. Called with the lock held.
+  void queue_expired_timers()
+  {
+    const auto now = std::chrono::steady_clock::now();
+
+    while (!timers_.empty() && timers_.begin()->first <= now) {
+      queue_.push_back(timers_.begin()->second);
+      timers_.erase(timers_.begin());
+    }
   }
 
   std::mutex mutex_;
   std::condition_variable cv_;
   std::deque<std::coroutine_handle<>> queue_;
+  std::multimap<std::chrono::steady_clock::time_point, std::coroutine_handle<>> timers_;
   bool stopped_ = false;
 
   std::thread thread_;
@@ -171,6 +202,13 @@ private:
 class inline_executor final {
 public:
   void post(std::coroutine_handle<> h) const { h.resume(); }
+
+  /// Blocks the calling thread for delay, then resumes h
+  void post_after(std::coroutine_handle<> h, std::chrono::nanoseconds delay) const
+  {
+    std::this_thread::sleep_for(delay);
+    h.resume();
+  }
 
   friend bool operator==(const inline_executor&, const inline_executor&) noexcept { return true; }
 };
