@@ -64,8 +64,8 @@ TEST_CASE("Server and client over asio", "[webkit][asio]")
   server.get("/hello", [](auto& ctx) { ctx.response().body("hello", "text/plain"); });
 
   // Suspends on a timer before answering
-  server.get("/slow/([0-9]+)", [executor](auto& ctx) -> pa::async<void> {
-    co_await pa::asio::sleep_for(executor, 10ms);
+  server.get("/slow/([0-9]+)", [](auto& ctx) -> pa::async<void> {
+    co_await pa::sleep_for(10ms);
     ctx.response().body(std::string(ctx.param(0)));
   });
 

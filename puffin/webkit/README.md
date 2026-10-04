@@ -37,8 +37,8 @@ int main()
     ctx.response().body("Visits: " + visits + "\n", "text/plain");
   });
 
-  server.get("/wait/([0-9]+)", [executor](auto& ctx) -> pa::async<void> {
-    co_await pa::asio::sleep_for(executor, std::chrono::milliseconds(std::stoi(std::string(ctx.param(0)))));
+  server.get("/wait/([0-9]+)", [](auto& ctx) -> pa::async<void> {
+    co_await pa::sleep_for(std::chrono::milliseconds(std::stoi(std::string(ctx.param(0)))));
     ctx.response().body("Waited\n", "text/plain");
   });
 

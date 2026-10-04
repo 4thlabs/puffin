@@ -229,22 +229,4 @@ public:
 }
 #endif
 
-namespace puffin {
-namespace async {
-namespace asio {
-
-/**
- * @brief Suspends the coroutine for the given duration, using a timer on the given executor
- */
-template<typename Rep, typename Period>
-async<void> sleep_for(executor ex, std::chrono::duration<Rep, Period> duration)
-{
-  ::puffin::async::detail::net::steady_timer timer(ex.get_inner_executor(), duration);
-  co_await timer.async_wait(use_async);
-}
-
-}
-}
-}
-
 #endif // PUFFIN_ASYNC_ADAPTER_ASIO_HPP

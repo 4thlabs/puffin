@@ -35,13 +35,12 @@
 
 - [x] Lazy `async<T>` task, executors, `co_spawn`, `sync_wait`
 - [x] `when_all`, `schedule_on`, `from_callback`, `try_await`
-- [x] Timers: `TimedExecutor` (`post_after`) on every executor, `sleep_for`
+- [x] Timers: `TimedExecutor` (`post_after`) on every executor, `sleep_for` (replaces the asio and Qt ones)
 - [x] asio adapter (standalone and Boost.Asio)
 - [x] Qt adapter
 - [ ] Awaitable concepts (`Awaitable`, `await_result_t`), today in `webkit/detail/awaitable.hpp`
 - [ ] Cancellation (needed for timeouts)
 - [ ] `when_any` (needed for timeouts, racing an operation against `sleep_for`)
-- [ ] Drop `asio::sleep_for` and `qt::sleep_for`, duplicates of `async::sleep_for`
 
 ## Webkit
 

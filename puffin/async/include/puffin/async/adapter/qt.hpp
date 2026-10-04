@@ -164,18 +164,6 @@ auto signal(Sender* sender, Signal signal)
   return detail::make_signal_awaitable(sender, signal, typename traits::arguments {});
 }
 
-/**
- * @brief Suspends the coroutine for the given duration, using a single shot timer in the thread of
- *        the context object (the application object by default)
- */
-template<typename Rep, typename Period>
-auto sleep_for(std::chrono::duration<Rep, Period> duration, QObject* context = QCoreApplication::instance())
-{
-  auto ms = std::chrono::ceil<std::chrono::milliseconds>(duration);
-
-  return from_callback<>([ms, context](auto callback) { QTimer::singleShot(ms, context, callback); });
-}
-
 }
 }
 }

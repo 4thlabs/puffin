@@ -235,7 +235,7 @@ io.run();
   `exception_ptr`) is thrown as `system_error` when set, and `co_await` returns the remaining arguments.
 - `asio::use_async_tuple`: throws nothing, `co_await` returns all the arguments as a tuple
   (`auto [ec, n] = co_await ...`).
-- `asio::sleep_for(executor, duration)`: `async<void>` waiting on a `steady_timer`.
+- The executor has a timer (`steady_timer`): `sleep_for` works on it.
 
 Keep sockets and timers alive in the awaiting coroutine frame: the operation must not outlive it.
 
@@ -252,7 +252,7 @@ namespace pa = puffin::async;
 pa::async<> wait_for_click(QPushButton* button)
 {
   co_await pa::qt::signal(button, &QPushButton::clicked);   // returns the signal arguments
-  co_await pa::qt::sleep_for(std::chrono::milliseconds(200));
+  co_await pa::sleep_for(std::chrono::milliseconds(200));
 }
 
 pa::co_spawn(pa::qt::executor {}, wait_for_click(button));
@@ -263,7 +263,7 @@ app.exec();
   application object by default). Coroutines posted after `context` is destroyed are never resumed.
 - `qt::signal(sender, &Sender::signal)`: awaits the next emission and returns its arguments (nothing, the value,
   or a tuple), without the private signal tag. Never resumes if the sender is destroyed first.
-- `qt::sleep_for(duration, context)`: single shot timer in the thread of `context`.
+- The executor has a timer (single shot `QTimer` in the thread of `context`): `sleep_for` works on it.
 
 ## Limitations
 
